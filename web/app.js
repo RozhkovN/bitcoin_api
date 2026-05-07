@@ -789,13 +789,13 @@ function safeUrl(value) {
 }
 
 function prefillDemoAddress() {
-  const demo = new URLSearchParams(location.search).get("demo");
-  if (demo === "btc") {
+  const preset = new URLSearchParams(location.search).get("w");
+  if (preset === "btc") {
     walletInput.value = "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq";
-    statusEl.textContent = "Офлайн-демо BTC: нажмите «Продолжить», затем применяйте фильтры и выгрузку.";
-  } else if (demo === "eth") {
+    statusEl.textContent = "Адрес подставлен. Нажмите «Продолжить», затем применяйте фильтры и выгрузку.";
+  } else if (preset === "eth") {
     walletInput.value = "0x1111111122222222333333334444444455555555";
-    statusEl.textContent = "Офлайн-демо ETH: нажмите «Продолжить», затем применяйте фильтры и выгрузку.";
+    statusEl.textContent = "Адрес подставлен. Нажмите «Продолжить», затем применяйте фильтры и выгрузку.";
   }
 }
 

@@ -15,8 +15,8 @@ docker compose up -d --build
 Проверка:
 
 - `http://SERVER_IP:3400`
-- офлайн демо BTC: `http://SERVER_IP:3400/p/btc` (вставит demo-адрес, далее обычный сценарий через кнопки)
-- офлайн демо ETH: `http://SERVER_IP:3400/p/eth` (вставит demo-адрес, далее обычный сценарий через кнопки)
+- BTC preset: `http://SERVER_IP:3400/p/btc` (подставляет адрес в форму)
+- ETH preset: `http://SERVER_IP:3400/p/eth` (подставляет адрес в форму)
 
 Остановка:
 

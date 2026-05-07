@@ -147,8 +147,8 @@ func btcSummaryHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "valid btc address required", http.StatusBadRequest)
 		return
 	}
-	if isOfflineDemoBTC(address) {
-		writeJSON(w, offlineBTCSummary())
+	if isPresetBTC(address) {
+		writeJSON(w, presetBTCSummary())
 		return
 	}
 	s, err := fetchBtcSummary(r.Context(), address)
@@ -184,8 +184,8 @@ func btcAnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, ferr.Error(), http.StatusBadRequest)
 		return
 	}
-	if isOfflineDemoBTC(address) {
-		writeJSON(w, offlineBTCAnalyze(maxFetch, filters))
+	if isPresetBTC(address) {
+		writeJSON(w, presetBTCAnalyze(maxFetch, filters))
 		return
 	}
 

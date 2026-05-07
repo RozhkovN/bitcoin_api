@@ -195,8 +195,8 @@ func ethSummaryHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "valid eth address required", http.StatusBadRequest)
 		return
 	}
-	if isOfflineDemoETH(address) {
-		writeJSON(w, offlineETHSummary())
+	if isPresetETH(address) {
+		writeJSON(w, presetETHSummary())
 		return
 	}
 	s, err := fetchEthSummary(r.Context(), address)
@@ -235,8 +235,8 @@ func ethAnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, ferr.Error(), http.StatusBadRequest)
 		return
 	}
-	if isOfflineDemoETH(address) {
-		writeJSON(w, offlineETHAnalyze(maxFetch, filters, includeInternal))
+	if isPresetETH(address) {
+		writeJSON(w, presetETHAnalyze(maxFetch, filters, includeInternal))
 		return
 	}
 
