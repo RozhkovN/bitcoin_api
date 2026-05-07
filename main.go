@@ -70,7 +70,16 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	mux.Handle("/", http.FileServer(http.FS(webFS)))
+	static := http.FileServer(http.FS(webFS))
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Embedded static assets can be aggressively cached by browsers.
+		// Disable caching to ensure UI text/data updates are reflected immediately.
+		if r.Method == http.MethodGet {
+			w.Header().Set("Cache-Control", "no-store, max-age=0")
+			w.Header().Set("Pragma", "no-cache")
+		}
+		static.ServeHTTP(w, r)
+	}))
 
 	port := strings.TrimSpace(os.Getenv("PORT"))
 	if port == "" {
