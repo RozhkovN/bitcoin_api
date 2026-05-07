@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -198,33 +200,171 @@ func presetBTCTxs() []BtcTxView {
 		"bc1qjv8x4m6n2p9r0s5t1u7w3y8z4a6c2e9f0g3h5k",
 		"bc1q5c8f2h7k9m1p3r6t0v4x8y2z5a9d1e4g7j0l3n",
 	}
+	makeTxID := func(i int) string {
+		sum := sha256.Sum256([]byte(fmt.Sprintf("btc:%s:%d:%d", presetBTCAddress, presetTxCount, i)))
+		return hex.EncodeToString(sum[:])
+	}
+	makeAddr := func(prefix string, i int) string {
+		sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%d", prefix, i)))
+		raw := hex.EncodeToString(sum[:])
+		return "bc1q" + raw[:36]
+	}
 	for i := 0; i < presetTxCount; i++ {
 		ts := base.Add(-time.Duration(i*3) * time.Hour).Unix()
 		isIn := i%3 != 0
-		amt := roundTo(0.0025+float64((i%23))*0.00041, 8)
-		fee := roundTo(0.000006+float64((i%17))*0.0000011, 8)
-		direction := "in"
+		fee := roundTo(0.0000012+float64((i%29))*0.00000018, 8)
 		from := sourcePool[i%len(sourcePool)]
 		to := presetBTCAddress
 		if !isIn {
-			direction = "out"
 			from = presetBTCAddress
 			to = destPool[i%len(destPool)]
 		}
-		hash := fmt.Sprintf("%064x", 700000000+i*17+11)
-		inputs := []BtcIOView{{Addr: from, Value: roundTo(amt+fee, 8), Index: 0, Spent: true}}
-		outputs := []BtcIOView{{Addr: to, Value: amt, Index: 0, Spent: i%5 == 0}}
-		if !isIn {
-			change := roundTo(0.0004+float64((i%7))*0.00005, 8)
-			outputs = append(outputs, BtcIOView{Addr: presetBTCAddress, Value: change, Index: 1, Spent: true})
+		hash := makeTxID(i)
+
+		inputCount := 1 + (i % 5) // 1..5
+		outputCount := 1 + ((i / 3) % 6)
+		if outputCount < 1 {
+			outputCount = 1
 		}
+		if outputCount > 7 {
+			outputCount = 7
+		}
+
+		var inputs []BtcIOView
+		var outputs []BtcIOView
+
+		if isIn {
+			creditParts := 1 + (i % 3) // 1..3 outputs to wallet
+			if creditParts > outputCount {
+				creditParts = outputCount
+			}
+			var totalCred float64
+			for k := 0; k < creditParts; k++ {
+				v := roundTo(0.0012+float64(((i+k)%71))*0.000037, 8)
+				totalCred += v
+				outputs = append(outputs, BtcIOView{
+					Addr:  presetBTCAddress,
+					Value: v,
+					Index: k,
+					Spent: (i+k)%9 == 0,
+				})
+			}
+			amount := roundTo(totalCred, 8)
+
+			var totalIn float64
+			for j := 0; j < inputCount; j++ {
+				addr := from
+				if j > 0 {
+					addr = makeAddr("src", i*17+j)
+				}
+				v := roundTo((amount+fee)*0.65/float64(inputCount)+float64(j)*0.00007, 8)
+				totalIn += v
+				inputs = append(inputs, BtcIOView{
+					Addr:  addr,
+					Value: v,
+					Index: j,
+					Spent: true,
+				})
+			}
+			restCount := outputCount - len(outputs)
+			for k := 0; k < restCount; k++ {
+				outputs = append(outputs, BtcIOView{
+					Addr:  makeAddr("out", i*31+k),
+					Value: roundTo(0.00018+float64((i+k)%11)*0.00003, 8),
+					Index: len(outputs),
+					Spent: true,
+				})
+			}
+
+			out = append(out, BtcTxView{
+				Hash:          hash,
+				ExplorerURL:   "https://mempool.space/tx/" + hash,
+				Date:          time.Unix(ts, 0).UTC().Format(time.RFC3339),
+				Timestamp:     ts,
+				Direction:     "in",
+				Amount:        amount,
+				Fee:           0,
+				Status:        "confirmed",
+				BlockHeight:   900000 - i,
+				BlockIndex:    i % 125,
+				Version:       2,
+				VinSz:         len(inputs),
+				VoutSz:        len(outputs),
+				Size:          190 + (i % 520),
+				Weight:        760 + (i % 2100),
+				LockTime:      0,
+				RelayedBy:     "mempool-gateway-01",
+				DoubleSpend:   false,
+				TxIndex:       int64(5000000 + i),
+				From:          inputs[0].Addr,
+				To:            presetBTCAddress,
+				Inputs:        inputs,
+				Outputs:       outputs,
+				TotalInValue:  roundTo(totalIn, 8),
+				TotalOutValue: roundTo(amount, 8),
+			})
+			continue
+		}
+
+		debitParts := 1 + (i % 4) // 1..4 external recipients
+		if debitParts > outputCount {
+			debitParts = outputCount
+		}
+		var sent float64
+		for k := 0; k < debitParts; k++ {
+			v := roundTo(0.0011+float64(((i+k)%83))*0.000031, 8)
+			sent += v
+			addr := to
+			if k > 0 {
+				addr = makeAddr("dst", i*19+k)
+			}
+			outputs = append(outputs, BtcIOView{
+				Addr:  addr,
+				Value: v,
+				Index: k,
+				Spent: false,
+			})
+		}
+		change := roundTo(0.0002+float64((i%29))*0.000009, 8)
+		outputs = append(outputs, BtcIOView{
+			Addr:  presetBTCAddress,
+			Value: change,
+			Index: len(outputs),
+			Spent: true,
+		})
+		for len(outputs) < outputCount {
+			outputs = append(outputs, BtcIOView{
+				Addr:  makeAddr("dust", i*13+len(outputs)),
+				Value: roundTo(0.00005+float64((i%7))*0.00001, 8),
+				Index: len(outputs),
+				Spent: true,
+			})
+		}
+
+		needIn := sent + change + fee
+		var totalIn float64
+		for j := 0; j < inputCount; j++ {
+			addr := presetBTCAddress
+			if j > 0 {
+				addr = makeAddr("self", i*23+j)
+			}
+			v := roundTo(needIn/float64(inputCount)+float64((j%3))*0.00004, 8)
+			totalIn += v
+			inputs = append(inputs, BtcIOView{
+				Addr:  addr,
+				Value: v,
+				Index: j,
+				Spent: true,
+			})
+		}
+
 		out = append(out, BtcTxView{
 			Hash:          hash,
 			ExplorerURL:   "https://mempool.space/tx/" + hash,
 			Date:          time.Unix(ts, 0).UTC().Format(time.RFC3339),
 			Timestamp:     ts,
-			Direction:     direction,
-			Amount:        amt,
+			Direction:     "out",
+			Amount:        roundTo(sent, 8),
 			Fee:           fee,
 			Status:        "confirmed",
 			BlockHeight:   900000 - i,
@@ -232,18 +372,18 @@ func presetBTCTxs() []BtcTxView {
 			Version:       2,
 			VinSz:         len(inputs),
 			VoutSz:        len(outputs),
-			Size:          190 + (i % 350),
-			Weight:        760 + (i % 1400),
+			Size:          210 + (i % 720),
+			Weight:        840 + (i % 2900),
 			LockTime:      0,
 			RelayedBy:     "mempool-gateway-01",
 			DoubleSpend:   false,
 			TxIndex:       int64(5000000 + i),
-			From:          from,
-			To:            to,
+			From:          presetBTCAddress,
+			To:            outputs[0].Addr,
 			Inputs:        inputs,
 			Outputs:       outputs,
-			TotalInValue:  roundTo(amt+fee, 8),
-			TotalOutValue: roundTo(amt, 8),
+			TotalInValue:  roundTo(totalIn, 8),
+			TotalOutValue: roundTo(sent+change, 8),
 		})
 	}
 	return out
