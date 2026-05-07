@@ -1,0 +1,12 @@
+services:
+  bitcoin-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bitcoin-api
+    restart: unless-stopped
+    environment:
+      PORT: "3400"
+      OPEN_BROWSER: "false"
+    ports:
+      - "3400:3400"

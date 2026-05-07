@@ -1,0 +1,7 @@
+dist
+.git
+.gitignore
+*.exe
+*.log
+terminals
+agent-transcripts

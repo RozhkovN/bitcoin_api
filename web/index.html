@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Кошельки — баланс и транзакции</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="grain" aria-hidden="true"></div>
+  <div class="orb orb-a" aria-hidden="true"></div>
+  <div class="orb orb-b" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <div>
+        <p class="brand-title">Система сбора сведений о транзакциях [BTC; ETH]</p>
+      </div>
+    </div>
+    <span class="pill">данные из сети</span>
+  </header>
+
+  <main class="page">
+    <section class="hero glass">
+      <p class="eyebrow">По адресу в блокчейне</p>
+      <h1>Сводка по кошельку</h1>
+      <p class="lede">
+        По адресу Bitcoin или Ethereum: баланс, сводка и выгрузка транзакций с фильтрами.
+      </p>
+
+      <form id="lookupForm" class="lookup" autocomplete="off">
+        <label class="field">
+          <span class="field-label">Адрес кошелька</span>
+          <input
+            id="walletInput"
+            type="text"
+            placeholder="BTC: bc1… / 1… · ETH: 0x…"
+            spellcheck="false"
+            required
+          />
+        </label>
+        <button id="lookupBtn" class="btn-primary" type="submit">Продолжить</button>
+      </form>
+
+      <div id="progress" class="progress hidden" role="status" aria-live="polite">
+        <div class="progress-bar"></div>
+      </div>
+      <p id="status" class="status">Готов к работе.</p>
+    </section>
+
+    <section id="btcWorkbench" class="workbench glass hidden">
+      <div class="workbench-head">
+        <div>
+          <p class="eyebrow tight">Bitcoin · профиль</p>
+          <h2 id="btcHeadline">Кошелёк</h2>
+          <p id="btcSubline" class="muted"></p>
+        </div>
+        <div class="chips" id="btcWarnings"></div>
+      </div>
+
+      <div id="btcSummaryGrid" class="summary-grid"></div>
+
+      <div class="controls-grid">
+        <div class="control glass-inner">
+          <div class="control-label-row">
+            <span class="field-label">Сколько последних транзакций запросить</span>
+            <span id="maxTxBadge" class="badge-soft">—</span>
+          </div>
+          <div class="range-row">
+            <input id="maxTxRange" type="range" min="1" max="100" value="100" />
+            <input id="maxTxInput" class="num-input" type="number" min="1" value="100" />
+          </div>
+          <p class="hint">Запрашиваются самые свежие операции первыми. Верхний предел на сервере — 20&nbsp;000 за один запрос.</p>
+        </div>
+
+        <div class="control glass-inner">
+          <span class="field-label">Фильтры (после выборки)</span>
+          <div class="filters">
+            <label class="mini">
+              <span>Дата с</span>
+              <input id="fDateFrom" type="date" />
+            </label>
+            <label class="mini">
+              <span>Дата по</span>
+              <input id="fDateTo" type="date" />
+            </label>
+            <label class="mini">
+              <span>Мин. BTC</span>
+              <input id="fMinBtc" type="number" step="any" min="0" placeholder="0" />
+            </label>
+            <label class="mini">
+              <span>Макс. BTC</span>
+              <input id="fMaxBtc" type="number" step="any" min="0" placeholder="∞" />
+            </label>
+            <label class="mini wide">
+              <span>Направление</span>
+              <select id="fDirection">
+                <option value="">Все</option>
+                <option value="in">Входящие</option>
+                <option value="out">Исходящие</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="fetchTxBtn" type="button" class="btn-primary">Выгрузить транзакции</button>
+        <button id="resetFiltersBtn" type="button" class="btn-ghost">Сбросить фильтры</button>
+      </div>
+    </section>
+
+    <section id="ethWorkbench" class="workbench glass hidden">
+      <div class="workbench-head">
+        <div>
+          <p class="eyebrow tight">Ethereum · профиль</p>
+          <h2 id="ethHeadline">Кошелёк</h2>
+          <p id="ethSubline" class="muted"></p>
+        </div>
+        <div class="chips" id="ethWarnings"></div>
+      </div>
+
+      <div id="ethSummaryGrid" class="summary-grid"></div>
+
+      <div class="controls-grid">
+        <div class="control glass-inner">
+          <div class="control-label-row">
+            <span class="field-label">Сколько последних транзакций запросить</span>
+            <span id="ethMaxTxBadge" class="badge-soft">—</span>
+          </div>
+          <div class="range-row">
+            <input id="ethMaxTxRange" type="range" min="1" max="100" value="100" />
+            <input id="ethMaxTxInput" class="num-input" type="number" min="1" value="100" />
+          </div>
+          <p class="hint">Запрашиваются самые свежие операции первыми. Верхний предел на сервере — 20&nbsp;000 за один запрос.</p>
+          <label class="check-inline">
+            <input id="ethIncludeInternal" type="checkbox" />
+            <span>Также internal tx (медленнее)</span>
+          </label>
+        </div>
+
+        <div class="control glass-inner">
+          <span class="field-label">Фильтры (после выборки)</span>
+          <div class="filters">
+            <label class="mini">
+              <span>Дата с</span>
+              <input id="ethFDateFrom" type="date" />
+            </label>
+            <label class="mini">
+              <span>Дата по</span>
+              <input id="ethFDateTo" type="date" />
+            </label>
+            <label class="mini">
+              <span>Мин. ETH</span>
+              <input id="ethFMinEth" type="number" step="any" min="0" placeholder="0" />
+            </label>
+            <label class="mini">
+              <span>Макс. ETH</span>
+              <input id="ethFMaxEth" type="number" step="any" min="0" placeholder="∞" />
+            </label>
+            <label class="mini wide">
+              <span>Направление</span>
+              <select id="ethFDirection">
+                <option value="">Все</option>
+                <option value="in">Входящие</option>
+                <option value="out">Исходящие</option>
+                <option value="contract">Контрактные</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="ethFetchTxBtn" type="button" class="btn-primary">Выгрузить транзакции</button>
+        <button id="ethResetFiltersBtn" type="button" class="btn-ghost">Сбросить фильтры</button>
+      </div>
+    </section>
+
+    <section id="overview" class="overview"></section>
+
+    <section id="btcTableWrap" class="table-wrap glass hidden">
+      <div class="table-head">
+        <div>
+          <p class="eyebrow tight">Лента операций</p>
+          <h3>Транзакции Bitcoin</h3>
+          <p id="btcTableMeta" class="muted"></p>
+        </div>
+        <div class="table-tools">
+          <input id="btcQuickFilter" type="search" class="search-input" placeholder="Быстрый поиск по хэшу / адресу…" />
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table" id="btcTable">
+          <thead>
+            <tr>
+              <th>Время</th>
+              <th>Тип</th>
+              <th class="right">Сумма</th>
+              <th class="right">Комиссия</th>
+              <th class="right">Размер / вес</th>
+              <th class="right">Блок</th>
+              <th>Статус</th>
+              <th>Хэш</th>
+            </tr>
+          </thead>
+          <tbody id="btcTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="ethTableWrap" class="table-wrap glass hidden">
+      <div class="table-head">
+        <div>
+          <p class="eyebrow tight">Лента операций</p>
+          <h3>Транзакции Ethereum</h3>
+          <p id="ethTableMeta" class="muted"></p>
+        </div>
+        <div class="table-tools">
+          <input id="ethQuickFilter" type="search" class="search-input" placeholder="Быстрый поиск по хэшу / адресу…" />
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table" id="ethTable">
+          <thead>
+            <tr>
+              <th>Время</th>
+              <th>Тип</th>
+              <th class="right">Сумма</th>
+              <th class="right">Комиссия</th>
+              <th class="right">Размер / вес</th>
+              <th class="right">Блок</th>
+              <th>Статус</th>
+              <th>Хэш</th>
+            </tr>
+          </thead>
+          <tbody id="ethTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <div id="txModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="txModalTitle">
+    <div class="modal-overlay" data-close-modal="true"></div>
+    <article class="modal-card glass">
+      <div class="modal-head">
+        <h2 id="txModalTitle">Детали транзакции</h2>
+        <button id="txModalClose" class="modal-close" type="button" aria-label="Закрыть">✕</button>
+      </div>
+      <div id="txModalBody" class="modal-body"></div>
+    </article>
+  </div>
+
+  <template id="metricTemplate">
+    <article class="metric-card glass-inner">
+      <p class="metric-title"></p>
+      <p class="metric-value"></p>
+    </article>
+  </template>
+
+  <script src="/app.js"></script>
+</body>
+</html>
