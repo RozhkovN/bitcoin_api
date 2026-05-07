@@ -59,13 +59,11 @@ func main() {
 	mux.HandleFunc("/api/eth/summary", ethSummaryHandler)
 	mux.HandleFunc("/api/eth/analyze", ethAnalyzeHandler)
 	mux.HandleFunc("/api/analyze", analyzeWalletHandler)
-	mux.HandleFunc("/api/preview/btc", previewBTCHandler)
-	mux.HandleFunc("/api/preview/eth", previewETHHandler)
 	mux.HandleFunc("/p/btc", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/?offline=btc", http.StatusFound)
+		http.Redirect(w, r, "/?demo=btc", http.StatusFound)
 	})
 	mux.HandleFunc("/p/eth", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/?offline=eth", http.StatusFound)
+		http.Redirect(w, r, "/?demo=eth", http.StatusFound)
 	})
 
 	webFS, err := fs.Sub(embeddedWeb, "web")

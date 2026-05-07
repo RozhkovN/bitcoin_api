@@ -788,102 +788,19 @@ function safeUrl(value) {
   }
 }
 
-function bootstrapOfflineDemo() {
-  const offline = new URLSearchParams(location.search).get("offline");
-  if (offline !== "btc" && offline !== "eth") return;
-  void runOfflinePresentation(offline);
-}
-
-async function runOfflinePresentation(which) {
-  const path = which === "btc" ? "/api/preview/btc" : "/api/preview/eth";
-  setBusy(true, "Загрузка офлайн-презентации…");
-  clearSharedResults();
-  closeTxModal();
-
-  try {
-    const response = await fetchWithTimeout(path, 8000);
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(errText || String(response.status));
-    }
-    const pack = await response.json();
-    if (!pack.summary || !pack.analyze) {
-      throw new Error("Неожиданный ответ превью.");
-    }
-
-    if (which === "btc") {
-      showEthWorkbench(false);
-      clearEthBoard();
-      ethTableWrap.classList.add("hidden");
-      applyOfflineBtc(pack.summary, pack.analyze);
-      statusEl.textContent =
-        "Офлайн-презентация BTC: интерфейс заполнен, блокчейн не запрашивается.";
-      return;
-    }
-
-    showBtcWorkbench(false);
-    clearBtcBoard();
-    btcTableWrap.classList.add("hidden");
-    applyOfflineEth(pack.summary, pack.analyze);
-    statusEl.textContent =
-      "Офлайн-презентация ETH: интерфейс заполнен, блокчейн не запрашивается.";
-  } catch (e) {
-    statusEl.textContent = `Ошибка офлайн-презентации: ${e.message}`;
-  } finally {
-    setBusy(false);
+function prefillDemoAddress() {
+  const demo = new URLSearchParams(location.search).get("demo");
+  if (demo === "btc") {
+    walletInput.value = "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq";
+    statusEl.textContent = "Офлайн-демо BTC: нажмите «Продолжить», затем применяйте фильтры и выгрузку.";
+  } else if (demo === "eth") {
+    walletInput.value = "0x1111111122222222333333334444444455555555";
+    statusEl.textContent = "Офлайн-демо ETH: нажмите «Продолжить», затем применяйте фильтры и выгрузку.";
   }
 }
 
-function applyOfflineBtc(summary, analyze) {
-  lastBtcAddress = summary.address;
-  btcHeadline.textContent = shortAddress(summary.address);
-  btcSubline.textContent = "Данные встроены в программу (режим без сети).";
-  renderBtcSummaryCards(summary);
-  configureMaxTxControls(summary.nTx || 0);
-
-  btcWarnings.innerHTML = "";
-  (analyze.warnings || []).forEach((w) => {
-    const span = document.createElement("span");
-    span.className = "warn-chip";
-    span.textContent = w;
-    btcWarnings.appendChild(span);
-  });
-
-  renderBtcResultOverview(analyze);
-  lastBtcRows = analyze.transactions || [];
-  btcQuickFilter.value = "";
-  renderBtcTableRows(lastBtcRows);
-  btcTableMeta.textContent = `Запрошено: ${formatInt(analyze.requestedFetch)} шт. · офлайн-набор (${formatInt(analyze.fetched)}) · после фильтров: ${formatInt(analyze.afterFilters)}`;
-  btcTableWrap.classList.remove("hidden");
-  showBtcWorkbench(true);
-}
-
-function applyOfflineEth(summary, analyze) {
-  lastEthAddress = summary.address;
-  ethHeadline.textContent = shortAddress(summary.address);
-  ethSubline.textContent = "Данные встроены в программу (режим без сети).";
-  renderEthSummaryCards(summary);
-  configureEthMaxTxControls(summary);
-
-  ethWarnings.innerHTML = "";
-  (analyze.warnings || []).forEach((w) => {
-    const span = document.createElement("span");
-    span.className = "warn-chip";
-    span.textContent = w;
-    ethWarnings.appendChild(span);
-  });
-
-  renderEthResultOverview(analyze);
-  lastEthRows = analyze.transactions || [];
-  ethQuickFilter.value = "";
-  renderEthTableRows(lastEthRows);
-  ethTableMeta.textContent = `Запрошено: ${formatInt(analyze.requestedFetch)} шт. · офлайн-набор (${formatInt(analyze.fetched)}) · после фильтров: ${formatInt(analyze.afterFilters)}`;
-  ethTableWrap.classList.remove("hidden");
-  showEthWorkbench(true);
-}
-
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", bootstrapOfflineDemo);
+  document.addEventListener("DOMContentLoaded", prefillDemoAddress);
 } else {
-  bootstrapOfflineDemo();
+  prefillDemoAddress();
 }
