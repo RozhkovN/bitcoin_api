@@ -212,7 +212,7 @@ func presetBTCTxs() []BtcTxView {
 	for i := 0; i < presetTxCount; i++ {
 		ts := base.Add(-time.Duration(i*3) * time.Hour).Unix()
 		isIn := i%3 != 0
-		fee := roundTo(0.0000012+float64((i%29))*0.00000018, 8)
+		fee := roundTo(0.0000014+float64((i%29))*0.00000022, 8)
 		from := sourcePool[i%len(sourcePool)]
 		to := presetBTCAddress
 		if !isIn {
@@ -283,7 +283,7 @@ func presetBTCTxs() []BtcTxView {
 				Timestamp:     ts,
 				Direction:     "in",
 				Amount:        amount,
-				Fee:           0,
+				Fee:           fee,
 				Status:        "confirmed",
 				BlockHeight:   900000 - i,
 				BlockIndex:    i % 125,
@@ -395,23 +395,63 @@ func presetETHTxs() []EthTxView {
 	for i := 0; i < presetTxCount; i++ {
 		ts := base.Add(-time.Duration(i*2) * time.Hour).Unix()
 		dir := "in"
-		if i%5 == 0 {
+		switch {
+		case i%11 == 0:
 			dir = "contract"
-		} else if i%2 == 0 {
+		case i%2 == 0:
 			dir = "out"
 		}
-		amt := roundTo(0.015+float64((i%29))*0.0037, 8)
-		if dir == "contract" {
-			amt = 0
-		}
-		fee := roundTo(0.00021+float64((i%19))*0.00003, 8)
-		from := fmt.Sprintf("0x%040x", 100000+i)
+
+		hashSum := sha256.Sum256([]byte(fmt.Sprintf("eth:%s:%d:%d", presetETHAddress, presetTxCount, i)))
+		hash := "0x" + hex.EncodeToString(hashSum[:])
+
+		addrFromSum := sha256.Sum256([]byte(fmt.Sprintf("eth-from:%d", i)))
+		addrToSum := sha256.Sum256([]byte(fmt.Sprintf("eth-to:%d", i)))
+		from := "0x" + hex.EncodeToString(addrFromSum[:])[:40]
 		to := presetETHAddress
 		if dir != "in" {
 			from = presetETHAddress
-			to = fmt.Sprintf("0x%040x", 200000+i)
+			to = "0x" + hex.EncodeToString(addrToSum[:])[:40]
 		}
-		hash := fmt.Sprintf("0x%064x", 900000+i*41+13)
+
+		amt := roundTo(0.012+float64((i%97))*0.0019, 8)
+		if dir == "contract" {
+			amt = 0
+		}
+
+		gasLimit := int64(21000)
+		gasUsed := int64(21000)
+		methodID := ""
+		fn := ""
+		input := "0x"
+		contractAddr := ""
+
+		if dir == "out" {
+			if i%7 == 0 {
+				gasLimit = 180000
+				gasUsed = 126000 + int64(i%7000)
+				methodID = "0xa9059cbb"
+				fn = "transfer(address,uint256)"
+				input = "0xa9059cbb" + strings.Repeat("0", 128)
+				contractAddrSum := sha256.Sum256([]byte(fmt.Sprintf("eth-erc20:%d", i)))
+				contractAddr = "0x" + hex.EncodeToString(contractAddrSum[:])[:40]
+			} else {
+				gasLimit = 65000 + int64(i%25000)
+				gasUsed = 41000 + int64(i%20000)
+			}
+		}
+		if dir == "contract" {
+			gasLimit = 240000 + int64(i%90000)
+			gasUsed = 155000 + int64(i%60000)
+			methodID = "0x095ea7b3"
+			fn = "approve(address,uint256)"
+			input = "0x095ea7b3" + strings.Repeat("0", 128)
+		}
+
+		gasPriceWei := int64(18_000_000_000 + int64(i%55)*900_000_000)    // 18..67.5 gwei
+		effGasPriceWei := int64(17_500_000_000 + int64(i%55)*860_000_000) // slightly lower
+		fee := roundTo((float64(gasUsed)*float64(effGasPriceWei))/1_000_000_000_000_000_000, 8)
+
 		status := "confirmed"
 		isError := "0"
 		receipt := "1"
@@ -419,6 +459,9 @@ func presetETHTxs() []EthTxView {
 			status = "failed"
 			isError = "1"
 			receipt = "0"
+			if dir == "in" {
+				amt = 0
+			}
 		}
 		out = append(out, EthTxView{
 			Kind:              "normal",
@@ -435,14 +478,14 @@ func presetETHTxs() []EthTxView {
 			From:              from,
 			To:                to,
 			Nonce:             int64(1000 + i),
-			Gas:               21000 + int64(i%20)*7000,
-			GasPrice:          fmt.Sprintf("%d", 20_000_000_000+int64(i%35)*1_000_000_000),
-			GasUsed:           21000 + int64(i%15)*5000,
-			EffectiveGasPrice: fmt.Sprintf("%d", 19_500_000_000+int64(i%35)*900_000_000),
-			Input:             "0x",
-			MethodID:          "",
-			FunctionName:      "",
-			ContractAddress:   "",
+			Gas:               gasLimit,
+			GasPrice:          fmt.Sprintf("%d", gasPriceWei),
+			GasUsed:           gasUsed,
+			EffectiveGasPrice: fmt.Sprintf("%d", effGasPriceWei),
+			Input:             input,
+			MethodID:          methodID,
+			FunctionName:      fn,
+			ContractAddress:   contractAddr,
 			CumulativeGasUsed: 3_000_000 + int64(i*3000),
 			Confirmations:     int64(100000 + i),
 			IsError:           isError,
