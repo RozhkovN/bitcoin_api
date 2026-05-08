@@ -229,6 +229,7 @@ async function runEthereumProfile(address) {
     showEthWorkbench(true);
 
     clearSharedResults();
+    showForensicsBanner(address, 'ETH');
 
     statusEl.textContent =
       typeof summary.nTx === "number" && summary.nTx >= 0
@@ -488,6 +489,7 @@ async function runBitcoinProfile(address) {
     configureMaxTxControls(summary.nTx || 0);
     showBtcWorkbench(true);
     clearSharedResults();
+    showForensicsBanner(address, 'BTC');
 
     statusEl.textContent = `В сети у адреса ${formatInt(summary.nTx)} транзакций. Настройте выборку и нажмите «Выгрузить транзакции».`;
   } catch (error) {
@@ -804,3 +806,71 @@ if (document.readyState === "loading") {
 } else {
   prefillDemoAddress();
 }
+
+// ─── Forensics Banner ────────────────────────────────────────────────────────
+// Shown after profile load — invites user to open the graph
+function showForensicsBanner(address, coin) {
+  // Remove old banner if any
+  document.getElementById("forensics-banner")?.remove();
+
+  const banner = document.createElement("div");
+  banner.id = "forensics-banner";
+  banner.innerHTML = `
+    <div style="
+      display:flex;align-items:center;gap:16px;
+      padding:14px 20px;margin:0 0 16px;
+      background:linear-gradient(135deg,rgba(37,99,235,0.12),rgba(8,145,178,0.08));
+      border:1px solid rgba(59,130,246,0.25);border-radius:12px;
+      animation:fadeSlideIn .35s cubic-bezier(.4,0,.2,1);
+    ">
+      <div style="
+        width:40px;height:40px;flex-shrink:0;border-radius:10px;
+        background:linear-gradient(135deg,#2563eb,#0891b2);
+        display:flex;align-items:center;justify-content:center;
+        box-shadow:0 0 16px rgba(59,130,246,0.3);
+      ">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/><circle cx="4" cy="6" r="2"/><circle cx="20" cy="6" r="2"/><circle cx="4" cy="18" r="2"/><circle cx="20" cy="18" r="2"/>
+          <line x1="6" y1="6" x2="10" y2="11"/><line x1="18" y1="6" x2="14" y2="11"/>
+          <line x1="6" y1="18" x2="10" y2="13"/><line x1="18" y1="18" x2="14" y2="13"/>
+        </svg>
+      </div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13.5px;font-weight:600;color:#e2e8f0;margin-bottom:2px;">
+          Открыть граф транзакций
+        </div>
+        <div style="font-size:12px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+          Визуализировать связи и получить оценку риска для <span style="color:#60a5fa;font-family:monospace;">${address}</span>
+        </div>
+      </div>
+      <a href="/forensics.html?address=${encodeURIComponent(address)}" style="
+        display:inline-flex;align-items:center;gap:7px;
+        padding:9px 18px;white-space:nowrap;
+        background:linear-gradient(135deg,#2563eb,#0891b2);
+        border-radius:8px;color:#fff;font-size:13px;font-weight:500;
+        text-decoration:none;flex-shrink:0;
+        box-shadow:0 4px 14px rgba(59,130,246,0.3);
+        transition:box-shadow .2s,opacity .2s;
+      " onmouseover="this.style.boxShadow='0 4px 20px rgba(59,130,246,0.5)'" onmouseout="this.style.boxShadow='0 4px 14px rgba(59,130,246,0.3)'">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/><circle cx="4" cy="6" r="2"/><circle cx="20" cy="6" r="2"/><circle cx="4" cy="18" r="2"/><circle cx="20" cy="18" r="2"/>
+          <line x1="6" y1="6" x2="10" y2="11"/><line x1="18" y1="6" x2="14" y2="11"/>
+          <line x1="6" y1="18" x2="10" y2="13"/><line x1="18" y1="18" x2="14" y2="13"/>
+        </svg>
+        Открыть Forensics
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      </a>
+    </div>
+  `;
+
+  // Insert before the workbench (first visible workbench)
+  const bench = coin === 'BTC'
+    ? document.getElementById("btcWorkbench")
+    : document.getElementById("ethWorkbench");
+  if (bench) bench.insertAdjacentElement("beforebegin", banner);
+}
+
+// Inject animation keyframe once
+const _style = document.createElement("style");
+_style.textContent = `@keyframes fadeSlideIn{from{opacity:0;transform:translateY(-8px);}to{opacity:1;transform:translateY(0);}}`;
+document.head.appendChild(_style);

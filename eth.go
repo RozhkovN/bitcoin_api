@@ -21,12 +21,13 @@ const (
 	ethExplorerBase       = "https://ethscan.org"
 	ethPageSize           = 100
 	ethMaxFetchPerRequest = 20000
-	ethPageThrottle       = 220 * time.Millisecond
+	ethPageThrottle       = 180 * time.Millisecond // снижен с 220ms
 	ethAnalyzeHTTPTimeout = 180 * time.Second
 	ethSingleFetchTimeout = 30 * time.Second
 	ethPublicRPC          = "https://ethereum.publicnode.com"
 	ethSummaryTotalsMaxTx = 2000
 	ethReceiptBatchSize   = 80
+	ethRetries            = 2
 )
 
 type EthSummaryResponse struct {
@@ -303,7 +304,7 @@ func parseEthFilters(q url.Values) (*ethFilterParams, error) {
 func fetchEthBalanceWei(ctx context.Context, address string) (string, error) {
 	u := fmt.Sprintf("%s?module=account&action=balance&address=%s", ethBlockscoutAPI, url.QueryEscape(address))
 	var resp ethBalanceResponse
-	if err := fetchJSONCtx(ctx, u, &resp, ethSingleFetchTimeout); err != nil {
+	if err := fetchJSONRetry(ctx, u, &resp, ethSingleFetchTimeout, ethRetries); err != nil {
 		return "", err
 	}
 	if resp.Status != "1" {
@@ -431,7 +432,7 @@ func fetchEthSummary(ctx context.Context, address string) (EthSummaryResponse, e
 
 	var c ethV2Counters
 	ntx := -1
-	_ = fetchJSONCtx(ctx, countersURL, &c, ethSingleFetchTimeout)
+	_ = fetchJSONRetry(ctx, countersURL, &c, ethSingleFetchTimeout, ethRetries)
 	if v, err := strconv.Atoi(strings.TrimSpace(c.TransactionsCount)); err == nil && strings.TrimSpace(c.TransactionsCount) != "" {
 		ntx = v
 	}
@@ -615,7 +616,7 @@ func paginateEthTxlist(ctx context.Context, address string, want int) ([]ethRawT
 		u := ethBlockscoutAPI + "?" + q.Encode()
 
 		var resp ethTxlistResponse
-		if err := fetchJSONCtx(ctx, u, &resp, ethSingleFetchTimeout); err != nil {
+		if err := fetchJSONRetry(ctx, u, &resp, ethSingleFetchTimeout, ethRetries); err != nil {
 			return all, false, fmt.Errorf("eth txlist page %d: %w", page, err)
 		}
 		if resp.Status != "1" || len(resp.Result) == 0 {
@@ -659,7 +660,7 @@ func paginateEthInternal(ctx context.Context, address string, want int) ([]ethIn
 		u := ethBlockscoutAPI + "?" + q.Encode()
 
 		var resp ethInternalListResponse
-		if err := fetchJSONCtx(ctx, u, &resp, ethSingleFetchTimeout); err != nil {
+		if err := fetchJSONRetry(ctx, u, &resp, ethSingleFetchTimeout, ethRetries); err != nil {
 			return all, false, fmt.Errorf("eth internal page %d: %w", page, err)
 		}
 		if resp.Status != "1" || len(resp.Result) == 0 {

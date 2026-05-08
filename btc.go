@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"sort"
@@ -14,9 +15,10 @@ import (
 const (
 	btcPageSize           = 100
 	btcMaxFetchPerRequest = 20000
-	btcPageThrottle       = 130 * time.Millisecond
+	btcPageThrottle       = 100 * time.Millisecond // снижен с 130ms
 	btcAnalyzeHTTPTimeout = 180 * time.Second
 	btcSingleFetchTimeout = 28 * time.Second
+	btcRetries            = 2 // попыток на каждый запрос
 )
 
 type btcAddrResponse struct {
@@ -250,21 +252,25 @@ func parseBtcFilters(q url.Values) (*btcFilterParams, error) {
 }
 
 func fetchBtcSummary(ctx context.Context, address string) (BtcSummaryResponse, error) {
+	// Первичный источник: blockchain.info
 	u := fmt.Sprintf("https://blockchain.info/rawaddr/%s?limit=0", url.PathEscape(address))
 	var raw btcAddrResponse
-	if err := fetchJSONCtx(ctx, u, &raw, btcSingleFetchTimeout); err != nil {
-		return BtcSummaryResponse{}, fmt.Errorf("btc summary failed: %w", err)
+	if err := fetchJSONRetry(ctx, u, &raw, btcSingleFetchTimeout, btcRetries); err == nil {
+		return BtcSummaryResponse{
+			Chain:         "bitcoin",
+			Address:       raw.Address,
+			Hash160:       raw.Hash160,
+			NTx:           raw.NTx,
+			NUnredeemed:   raw.NUnredeemed,
+			Balance:       roundTo(satoshiToCoin(raw.FinalBalance), 8),
+			TotalReceived: roundTo(satoshiToCoin(raw.TotalReceived), 8),
+			TotalSent:     roundTo(satoshiToCoin(raw.TotalSent), 8),
+		}, nil
 	}
-	return BtcSummaryResponse{
-		Chain:         "bitcoin",
-		Address:       raw.Address,
-		Hash160:       raw.Hash160,
-		NTx:           raw.NTx,
-		NUnredeemed:   raw.NUnredeemed,
-		Balance:       roundTo(satoshiToCoin(raw.FinalBalance), 8),
-		TotalReceived: roundTo(satoshiToCoin(raw.TotalReceived), 8),
-		TotalSent:     roundTo(satoshiToCoin(raw.TotalSent), 8),
-	}, nil
+
+	// Fallback: mempool.space
+	log.Printf("[btc] blockchain.info summary недоступен, переключаюсь на mempool.space")
+	return fetchBtcSummaryMempool(ctx, address)
 }
 
 func analyzeBitcoinRich(ctx context.Context, address string, maxFetch int, filters *btcFilterParams) (BtcAnalyzeResponse, error) {
@@ -283,9 +289,12 @@ func analyzeBitcoinRich(ctx context.Context, address string, maxFetch int, filte
 		warnings = append(warnings, fmt.Sprintf("запрошено %d, в сети у адреса %d транзакций", maxFetch, meta.NTx))
 	}
 
-	rawTxs, err := paginateBtcTxs(ctx, address, want)
+	allViews, source, err := fetchBtcTxViews(ctx, address, want)
 	if err != nil {
 		return BtcAnalyzeResponse{}, err
+	}
+	if source != "blockchain.info" {
+		warnings = append(warnings, fmt.Sprintf("данные транзакций получены через %s (основной API недоступен)", source))
 	}
 
 	var (
@@ -296,8 +305,7 @@ func analyzeBitcoinRich(ctx context.Context, address string, maxFetch int, filte
 		inCount  int
 		outCount int
 	)
-	for _, tx := range rawTxs {
-		view := buildBtcTxView(address, tx)
+	for _, view := range allViews {
 		if view.Direction == "" {
 			skipped++
 			continue
@@ -328,7 +336,7 @@ func analyzeBitcoinRich(ctx context.Context, address string, maxFetch int, filte
 		TotalReceived:  meta.TotalReceived,
 		TotalSent:      meta.TotalSent,
 		RequestedFetch: maxFetch,
-		Fetched:        len(rawTxs),
+		Fetched:        len(allViews),
 		AfterFilters:   len(out),
 		TotalIn:        roundTo(totalIn, 8),
 		TotalOut:       roundTo(totalOut, 8),
@@ -354,7 +362,7 @@ func paginateBtcTxs(ctx context.Context, address string, want int) ([]btcRawTx, 
 			url.PathEscape(address), btcPageSize, offset,
 		)
 		var page btcAddrResponse
-		if err := fetchJSONCtx(ctx, pageURL, &page, btcSingleFetchTimeout); err != nil {
+		if err := fetchJSONRetry(ctx, pageURL, &page, btcSingleFetchTimeout, btcRetries); err != nil {
 			return all, fmt.Errorf("btc page offset %d: %w", offset, err)
 		}
 		if len(page.Txs) == 0 {
@@ -377,6 +385,13 @@ func paginateBtcTxs(ctx context.Context, address string, want int) ([]btcRawTx, 
 		}
 	}
 	return all, nil
+}
+
+// fetchBtcTxViews получает транзакции через relay-цепочку источников.
+// При падении очередного источника передаёт cursor следующему — без потери порядка.
+func fetchBtcTxViews(ctx context.Context, address string, want int) ([]BtcTxView, string, error) {
+	views, err := fetchBtcTxViewsRelay(ctx, address, want)
+	return views, "relay", err
 }
 
 func buildBtcTxView(address string, tx btcRawTx) BtcTxView {
@@ -494,14 +509,15 @@ func btcTxMatchesFilters(v BtcTxView, f *btcFilterParams) bool {
 }
 
 func analyzeBitcoinLegacy(address string) (AnalyzeResponse, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	raw, err := paginateBtcTxs(ctx, address, 50)
+	meta, err := fetchBtcSummary(ctx, address)
 	if err != nil {
 		return AnalyzeResponse{}, err
 	}
-	meta, err := fetchBtcSummary(ctx, address)
+
+	views, _, err := fetchBtcTxViews(ctx, address, 50)
 	if err != nil {
 		return AnalyzeResponse{}, err
 	}
@@ -511,29 +527,27 @@ func analyzeBitcoinLegacy(address string) (AnalyzeResponse, error) {
 		Address:      address,
 		Balance:      meta.Balance,
 		TotalTx:      meta.NTx,
-		Transactions: make([]TxView, 0, len(raw)),
+		Transactions: make([]TxView, 0, len(views)),
 	}
 
 	var totalIn, totalOut float64
-	for _, tx := range raw {
-		b := buildBtcTxView(address, tx)
+	for _, b := range views {
 		if b.Direction == "" {
 			continue
 		}
-		amount := b.Amount
 		switch b.Direction {
 		case "out":
-			totalOut += amount
+			totalOut += b.Amount
 			view.OutgoingTx++
 		case "in":
-			totalIn += amount
+			totalIn += b.Amount
 			view.IncomingTx++
 		}
 		view.Transactions = append(view.Transactions, TxView{
 			Hash:      b.Hash,
 			Date:      b.Date,
 			Direction: b.Direction,
-			Amount:    amount,
+			Amount:    b.Amount,
 			From:      b.From,
 			To:        b.To,
 			Fee:       b.Fee,

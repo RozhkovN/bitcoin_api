@@ -1,11 +1,8 @@
 package main
 
 import (
-	"context"
-	"crypto/tls"
 	"embed"
 	"encoding/json"
-	"fmt"
 	"io/fs"
 	"log"
 	"math"
@@ -59,6 +56,8 @@ func main() {
 	mux.HandleFunc("/api/eth/summary", ethSummaryHandler)
 	mux.HandleFunc("/api/eth/analyze", ethAnalyzeHandler)
 	mux.HandleFunc("/api/analyze", analyzeWalletHandler)
+	mux.HandleFunc("/api/btc/graph", btcGraphHandler)
+	mux.HandleFunc("/api/eth/graph", ethGraphHandler)
 	mux.HandleFunc("/p/btc", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/?w=btc", http.StatusFound)
 	})
@@ -153,42 +152,6 @@ func analyzeWalletHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, resp)
-}
-
-func fetchJSON(url string, target any) error {
-	return fetchJSONCtx(context.Background(), url, target, 12*time.Second)
-}
-
-func fetchJSONCtx(ctx context.Context, url string, target any, timeout time.Duration) error {
-	client := &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			ForceAttemptHTTP2: false,
-			TLSClientConfig: &tls.Config{
-				MinVersion: tls.VersionTLS12,
-			},
-		},
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; WalletAnalyzer/1.0; +https://localhost)")
-	req.Header.Set("Cache-Control", "no-cache")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("upstream status %d", resp.StatusCode)
-	}
-
-	return json.NewDecoder(resp.Body).Decode(target)
 }
 
 func writeJSON(w http.ResponseWriter, payload any) {
