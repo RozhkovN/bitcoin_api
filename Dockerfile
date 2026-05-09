@@ -45,5 +45,8 @@ ENV PORT=3400
 ENV OPEN_BROWSER=false
 
 EXPOSE 3400
+# Ensure runtime user can write app files and /data mountpoint.
+# For named volumes Docker copies ownership from this mountpoint on first init.
+RUN mkdir -p /data && chown -R app:app /app /data
 USER app
 ENTRYPOINT ["./forensics"]

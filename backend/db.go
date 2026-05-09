@@ -22,6 +22,11 @@ func initDB() {
 		dbPath = filepath.Join(dir, "forensics_cache.db")
 	}
 
+	// Ensure parent directory exists (important for containers/custom paths).
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		log.Fatalf("[db] mkdir error for %s: %v", dbPath, err)
+	}
+
 	db, err := sql.Open("sqlite", dbPath+"?_journal=WAL&_synchronous=NORMAL&_cache_size=-65536&_temp_store=MEMORY")
 	if err != nil {
 		log.Fatalf("[db] open error: %v", err)
