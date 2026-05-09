@@ -1,12 +1,25 @@
 services:
-  bitcoin-api:
+  forensics:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: bitcoin-api
+    container_name: blockchain-forensics
     restart: unless-stopped
+    ports:
+      - "3400:3400"
     environment:
       PORT: "3400"
       OPEN_BROWSER: "false"
-    ports:
-      - "3400:3400"
+      FORENSICS_DB_PATH: "/data/forensics_cache.db"
+    volumes:
+      - forensics-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3400/api/btc/graph?address=1A1zP1eP5QGefi2DMPTfTL5SLmv7Divfna&maxTx=1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  forensics-data:
+    driver: local

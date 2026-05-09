@@ -1,7 +1,19 @@
-dist
 .git
 .gitignore
-*.exe
 *.log
-terminals
-agent-transcripts
+*.exe
+terminals/
+agent-transcripts/
+
+# Frontend — only pass what's needed (node_modules built inside Docker)
+frontend/node_modules/
+frontend/.vite/
+frontend/dist/
+
+# Backend — exclude DB and binary
+backend/forensics
+backend/forensics_cache.db
+backend/static/
+
+# Old web folder (plain HTML, replaced by React)
+web/

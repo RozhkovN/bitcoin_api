@@ -1,0 +1,13 @@
+# Ignore temporary Vite config backups and local dev artifacts
+/frontend/vite.config.js.timestamp-*.mjs
+
+# TypeScript build metadata
+**/*.tsbuildinfo
+
+# Node dependencies
+/frontend/node_modules
+
+# macOS metadata
+.DS_Store
+
+forensics_cache.db

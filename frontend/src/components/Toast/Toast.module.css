@@ -1,0 +1,36 @@
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  min-width: 220px;
+  max-width: 320px;
+  background: rgba(8, 11, 24, 0.97);
+  backdrop-filter: blur(20px);
+  border-radius: 10px;
+  font-size: 12.5px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  border-left: 3px solid var(--accent);
+  animation: toastIn 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+.toast svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.text { color: var(--text); flex: 1; }
+.success { border-left-color: var(--success); }
+.success svg { stroke: var(--success); }
+.warn { border-left-color: var(--warn); }
+.warn svg { stroke: var(--warn); }
+.error { border-left-color: var(--danger); }
+.error svg { stroke: var(--danger); }
+.out { animation: toastOut 0.2s forwards; }
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes toastOut {
+  to { opacity: 0; transform: translateX(16px); }
+}

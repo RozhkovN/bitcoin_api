@@ -1,24 +1,49 @@
-FROM golang:1.22-alpine AS builder
+# ─── Stage 1: Build React frontend ───────────────────────────────────────────
+FROM node:22-alpine AS frontend-builder
 
-WORKDIR /app
+WORKDIR /build/frontend
 
-COPY go.mod ./
+# Install deps first (layer cache)
+COPY frontend/package*.json ./
+RUN npm ci --prefer-offline
+
+# Build (output → ../backend/static per vite.config.ts)
+COPY frontend/ .
+RUN npm run build
+
+
+# ─── Stage 2: Build Go backend ───────────────────────────────────────────────
+FROM golang:1.25-alpine AS backend-builder
+
+WORKDIR /build/backend
+
+# Download deps (layer cache)
+COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 
-COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /bin/bitcoin_api .
+# Copy source + embedded static from stage 1
+COPY backend/ .
+COPY --from=frontend-builder /build/backend/static ./static
 
+# Pure Go SQLite (no CGo needed with modernc.org/sqlite)
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o forensics .
+
+
+# ─── Stage 3: Minimal runtime image ──────────────────────────────────────────
 FROM alpine:3.20
 
+RUN apk add --no-cache ca-certificates tzdata && \
+    addgroup -S app && adduser -S -G app app
+
 WORKDIR /app
+COPY --from=backend-builder /build/backend/forensics ./forensics
 
-RUN adduser -D -u 10001 appuser
-COPY --from=builder /bin/bitcoin_api /app/bitcoin_api
-
+# SQLite DB lives on a persistent volume
+VOLUME ["/data"]
+ENV FORENSICS_DB_PATH=/data/forensics_cache.db
 ENV PORT=3400
 ENV OPEN_BROWSER=false
 
 EXPOSE 3400
-
-USER appuser
-ENTRYPOINT ["/app/bitcoin_api"]
+USER app
+ENTRYPOINT ["./forensics"]
