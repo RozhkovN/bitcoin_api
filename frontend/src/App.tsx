@@ -1,8 +1,11 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { AuthProvider } from './context/AuthContext'
+import ProtectedRoute from './components/ProtectedRoute'
 import ForensicsPage from './pages/ForensicsPage'
 import HomePage from './pages/HomePage'
 import TracePage from './pages/TracePage'
+import LoginPage from './pages/LoginPage'
 
 export default function App() {
   // Global tooltip div for icon-btn hints, appended to body to escape stacking contexts
@@ -47,12 +50,36 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/forensics" element={<ForensicsPage />} />
-        <Route path="/trace" element={<TracePage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <HomePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/forensics"
+            element={
+              <ProtectedRoute>
+                <ForensicsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/trace"
+            element={
+              <ProtectedRoute>
+                <TracePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   )
 }

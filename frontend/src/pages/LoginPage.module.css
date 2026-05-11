@@ -1,0 +1,207 @@
+.root {
+  min-height: 100vh;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.mesh {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+.blob1 {
+  position: absolute;
+  width: min(720px, 90vw);
+  height: min(720px, 90vw);
+  border-radius: 50%;
+  top: -18%;
+  left: -12%;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.11) 0%, transparent 68%);
+  animation: aMove 20s ease-in-out infinite alternate;
+}
+.blob2 {
+  position: absolute;
+  width: min(560px, 85vw);
+  height: min(560px, 85vw);
+  border-radius: 50%;
+  bottom: -14%;
+  right: -10%;
+  background: radial-gradient(circle, rgba(8, 145, 178, 0.1) 0%, transparent 68%);
+  animation: aMove2 16s ease-in-out infinite alternate;
+}
+.blob3 {
+  position: absolute;
+  width: 420px;
+  height: 420px;
+  border-radius: 50%;
+  top: 42%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.06) 0%, transparent 70%);
+  filter: blur(2px);
+}
+
+.grid {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, black 10%, transparent 75%);
+}
+
+.card {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 420px;
+  padding: 40px 36px 36px;
+  border-radius: 20px;
+  background: linear-gradient(155deg, rgba(13, 20, 40, 0.92) 0%, rgba(8, 13, 28, 0.88) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.35) inset,
+    0 24px 80px rgba(0, 0, 0, 0.55),
+    0 0 120px rgba(59, 130, 246, 0.08);
+  backdrop-filter: blur(24px);
+  animation: fadeIn 0.55s ease both;
+}
+
+.eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  color: #06b6d4;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  text-align: center;
+  margin-bottom: 14px;
+}
+
+.title {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  text-align: center;
+  line-height: 1.15;
+  background: linear-gradient(135deg, #e2e8f0 0%, #94a3b8 55%, #3b82f6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 8px;
+}
+.title span {
+  background: linear-gradient(90deg, #3b82f6, #06b6d4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.sub {
+  text-align: center;
+  font-size: 13px;
+  color: var(--text3);
+  line-height: 1.55;
+  margin-bottom: 28px;
+}
+
+.field {
+  margin-bottom: 16px;
+}
+.label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+.input {
+  width: 100%;
+  padding: 13px 16px;
+  border-radius: 12px;
+  font-size: 14px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  outline: none;
+  font-family: var(--mono);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.input::placeholder {
+  color: var(--text4);
+}
+.input:focus {
+  border-color: rgba(59, 130, 246, 0.45);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.submit {
+  width: 100%;
+  margin-top: 8px;
+  padding: 14px 20px;
+  border: none;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(135deg, #2563eb, #0891b2);
+  box-shadow: 0 8px 28px rgba(37, 99, 235, 0.35);
+  transition: transform 0.15s, box-shadow 0.2s, opacity 0.2s;
+}
+.submit:hover:not(:disabled) {
+  box-shadow: 0 10px 36px rgba(37, 99, 235, 0.45);
+  transform: translateY(-1px);
+}
+.submit:active:not(:disabled) {
+  transform: translateY(0);
+}
+.submit:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.err {
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: #fecaca;
+  background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.22);
+}
+
+.hint {
+  margin-top: 22px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text4);
+  line-height: 1.5;
+}
+
+.ring {
+  position: absolute;
+  inset: -1px;
+  border-radius: 21px;
+  pointer-events: none;
+  background: linear-gradient(
+    135deg,
+    rgba(59, 130, 246, 0.25),
+    transparent 40%,
+    transparent 60%,
+    rgba(8, 145, 178, 0.2)
+  );
+  opacity: 0.5;
+  z-index: -1;
+  filter: blur(0.5px);
+}

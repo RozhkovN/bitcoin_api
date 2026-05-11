@@ -10,7 +10,7 @@ export async function fetchGraph(
 ): Promise<GraphResponse> {
   const endpoint = chain === 'bitcoin' ? '/api/btc/graph' : '/api/eth/graph'
   const url = `${BASE}${endpoint}?address=${encodeURIComponent(address)}&maxTx=${maxTx}`
-  const res = await fetch(url, { signal })
+  const res = await fetch(url, { signal, credentials: 'include' })
   if (!res.ok) throw new Error(`API error ${res.status}`)
   return res.json()
 }
@@ -89,7 +89,7 @@ export async function fetchTrace(
   signal?: AbortSignal,
 ): Promise<TraceResponse> {
   const url = `${BASE}/api/btc/trace?hash=${encodeURIComponent(hash)}&depth=${depth}&direction=${direction}`
-  const res = await fetch(url, { signal })
+  const res = await fetch(url, { signal, credentials: 'include' })
   if (!res.ok) throw new Error(`Trace API error ${res.status}: ${await res.text()}`)
   return res.json()
 }

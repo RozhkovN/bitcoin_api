@@ -11,9 +11,10 @@ interface GraphSettings {
 interface Props {
   settings: GraphSettings
   onChange: (key: keyof GraphSettings, val: boolean) => void
+  onLogout?: () => void
 }
 
-export default function Settings({ settings, onChange }: Props) {
+export default function Settings({ settings, onChange, onLogout }: Props) {
   const { settingsOpen, toggleSettings } = useStore()
 
   if (!settingsOpen) return null
@@ -27,6 +28,14 @@ export default function Settings({ settings, onChange }: Props) {
         <SettingRow label="Стрелки направлений" value={settings.arrows} onChange={v => onChange('arrows', v)} />
         <SettingRow label="Свечение узлов" value={settings.glow} onChange={v => onChange('glow', v)} />
         <SettingRow label="Анимация фона" value={settings.bg} onChange={v => onChange('bg', v)} />
+        {onLogout ? (
+          <>
+            <div className={styles.divider} />
+            <button type="button" className={styles.logoutBtn} onClick={() => { onLogout(); toggleSettings() }}>
+              Выйти из аккаунта
+            </button>
+          </>
+        ) : null}
       </div>
     </>
   )

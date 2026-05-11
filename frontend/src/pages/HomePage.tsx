@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface SummaryCard { title: string; value: string }
@@ -85,7 +86,7 @@ function safeUrl(v: string) {
 async function fetchWithTimeout(url: string, ms: number) {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), ms)
-  try { return await fetch(url, { signal: ctrl.signal }) }
+  try { return await fetch(url, { signal: ctrl.signal, credentials: 'include' }) }
   finally { clearTimeout(timer) }
 }
 
@@ -220,6 +221,12 @@ function IoSection({ title, items, unit, highlightAddr, accent = 'neutral' }: Io
 // ─── Main Component ────────────────────────────────────────────────────────────
 export default function HomePage() {
   const navigate = useNavigate()
+  const { logout } = useAuth()
+
+  const handleLogout = useCallback(async () => {
+    await logout()
+    navigate('/login', { replace: true })
+  }, [logout, navigate])
 
   // Input state
   const [addr, setAddr] = useState('')
@@ -428,7 +435,32 @@ export default function HomePage() {
             Blockchain Forensics
           </span>
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button
+            type="button"
+            onClick={() => void handleLogout()}
+            style={{
+              padding: '6px 12px',
+              borderRadius: 8,
+              background: 'transparent',
+              border: '1px solid rgba(255,255,255,0.1)',
+              color: 'var(--text3)',
+              fontSize: 12,
+              fontWeight: 500,
+              cursor: 'pointer',
+              transition: 'all .2s',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.borderColor = 'rgba(248,113,113,0.35)'
+              e.currentTarget.style.color = '#fca5a5'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'
+              e.currentTarget.style.color = 'var(--text3)'
+            }}
+          >
+            Выйти
+          </button>
           <button
             onClick={() => navigate('/trace')}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.28)', color: '#34d399', fontSize: 13, fontWeight: 500, cursor: 'pointer', transition: 'all .2s' }}

@@ -1,5 +1,7 @@
 import { useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store'
+import { useAuth } from '../context/AuthContext'
 import { useForensics } from '../hooks/useForensics'
 import { useSession, clearSession } from '../hooks/useSession'
 import { useKeyboard } from '../hooks/useKeyboard'
@@ -29,6 +31,8 @@ interface GraphSettings {
 }
 
 export default function ForensicsPage() {
+  const navigate = useNavigate()
+  const { logout } = useAuth()
   const {
     mergedGraph, loading, selectedNode,
     setSelectedNode, clearGraph,
@@ -188,6 +192,11 @@ export default function ForensicsPage() {
     setGraphSettings(prev => ({ ...prev, [key]: val }))
   }, [])
 
+  const handleAuthLogout = useCallback(async () => {
+    await logout()
+    navigate('/login', { replace: true })
+  }, [logout, navigate])
+
   const hasGraph = !!mergedGraph
 
   return (
@@ -218,7 +227,7 @@ export default function ForensicsPage() {
       <CmdPalette open={cmdOpen} onClose={() => setCmdOpen(false)} onAnalyze={handleAnalyze} />
 
       {/* Settings */}
-      <Settings settings={graphSettings} onChange={handleSettingChange} />
+      <Settings settings={graphSettings} onChange={handleSettingChange} onLogout={handleAuthLogout} />
 
       {/* TopBar */}
       <TopBar onAnalyze={handleAnalyze} onOpenCmd={() => setCmdOpen(true)} />
