@@ -54,6 +54,9 @@ type TxView struct {
 func main() {
 	initDB() // SQLite cache
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/auth/login", authLoginHandler)
+	mux.HandleFunc("/api/auth/logout", authLogoutHandler)
+	mux.HandleFunc("/api/auth/me", authMeHandler)
 	mux.HandleFunc("/api/btc/summary", btcSummaryHandler)
 	mux.HandleFunc("/api/btc/analyze", btcAnalyzeHandler)
 	mux.HandleFunc("/api/eth/summary", ethSummaryHandler)
@@ -113,7 +116,7 @@ func main() {
 		}()
 	}
 	log.Printf("wallet analyzer started at http://localhost%s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, withAPIAuth(mux)); err != nil {
 		log.Fatal(err)
 	}
 }
