@@ -9,18 +9,7 @@ export default defineConfig({
   },
   build: {
     outDir: '../backend/static',
-    emptyOutDir: false,
-    // Suppress chunk size warnings for three.js / 3d-force-graph
-    chunkSizeWarningLimit: 1500,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'three': ['three'],
-          '3d-graph': ['3d-force-graph'],
-          'graph2d': ['force-graph'],
-        },
-      },
-    },
+    emptyOutDir: true,
   },
   server: {
     port: 5173,

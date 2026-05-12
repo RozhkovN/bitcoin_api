@@ -2,13 +2,11 @@ import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
-import ForensicsPage from './pages/ForensicsPage'
 import HomePage from './pages/HomePage'
 import TracePage from './pages/TracePage'
 import LoginPage from './pages/LoginPage'
 
 export default function App() {
-  // Global tooltip div for icon-btn hints, appended to body to escape stacking contexts
   useEffect(() => {
     const tip = document.createElement('div')
     tip.id = 'g-tip'
@@ -34,7 +32,6 @@ export default function App() {
 
     document.addEventListener('mouseover', show)
     document.addEventListener('mouseout', hide)
-    // Force-hide on any click / scroll / route navigation so it never gets stuck
     document.addEventListener('click', hide)
     document.addEventListener('scroll', hide, true)
     window.addEventListener('popstate', hide)
@@ -58,14 +55,6 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <HomePage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/forensics"
-            element={
-              <ProtectedRoute>
-                <ForensicsPage />
               </ProtectedRoute>
             }
           />

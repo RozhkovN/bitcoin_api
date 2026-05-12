@@ -7,6 +7,8 @@ import { useStore } from '../store'
 
 const TRACE_SESSION_KEY = 'bf_trace_session_v1'
 const TRACE_LAST_MS_KEY = 'bf_trace_last_ms'
+const TRACE_HISTORY_KEY = 'bf_trace_history_v1'
+const MAX_HISTORY = 20
 
 async function copyToClipboard(text: string): Promise<boolean> {
   if (!text) return false
@@ -38,6 +40,17 @@ interface SavedTrace {
   data: TraceResponse
 }
 
+interface HistoryEntry {
+  id: number
+  hash: string
+  depth: number
+  direction: 'both' | 'forward' | 'backward'
+  data: TraceResponse
+  ts: number
+}
+
+let historyIdCounter = Date.now()
+
 export default function TracePage() {
   const navigate = useNavigate()
   const addToast = useStore(s => s.addToast)
@@ -54,6 +67,7 @@ export default function TracePage() {
     return Number.isFinite(n) && n > 0 ? n : 0
   })
   const [data, setData] = useState<TraceResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [, setHoverNode] = useState<TraceNode | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -61,11 +75,25 @@ export default function TracePage() {
   const timeoutRef = useRef<number | null>(null)
   const sessionWarnedRef = useRef(false)
 
-  // Восстановление сессии (отдельный ключ — чтобы не пересекалось с форензикой).
-  // Если URL содержит ?hash=... — сразу запускаем трассировку этого hash.
+  // Chain analysis history
+  const [traceHistory, setTraceHistory] = useState<HistoryEntry[]>([])
+  const [activeHistoryId, setActiveHistoryId] = useState<number | null>(null)
+  const [confirmHash, setConfirmHash] = useState<string | null>(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
+
+  // Restore session and history
   useEffect(() => {
     if (restoredRef.current) return
     restoredRef.current = true
+
+    // Restore history
+    try {
+      const rawHist = sessionStorage.getItem(TRACE_HISTORY_KEY)
+      if (rawHist) {
+        const parsed: HistoryEntry[] = JSON.parse(rawHist)
+        if (Array.isArray(parsed)) setTraceHistory(parsed)
+      }
+    } catch {}
 
     const url = new URL(window.location.href)
     const param = url.searchParams.get('hash')
@@ -73,8 +101,6 @@ export default function TracePage() {
       setHash(param)
       url.searchParams.delete('hash')
       window.history.replaceState({}, '', url.pathname + (url.search || '') + url.hash)
-      // запускаем после монтирования (handleTrace ещё не определён в этот момент,
-      // поэтому отложим в microtask)
       Promise.resolve().then(() => handleTrace(param))
       return
     }
@@ -92,6 +118,7 @@ export default function TracePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Persist current session
   useEffect(() => {
     if (!data) return
     try {
@@ -102,7 +129,7 @@ export default function TracePage() {
       if (!sessionWarnedRef.current) {
         sessionWarnedRef.current = true
         addToast(
-          'Не удалось сохранить трассировку в sessionStorage (лимит размера). Оставайся на этой вкладке или скопируй адреса блоком ниже перед закрытием.',
+          'Не удалось сохранить трассировку в sessionStorage (лимит размера).',
           'error',
           8000,
         )
@@ -110,7 +137,15 @@ export default function TracePage() {
     }
   }, [data, hash, depth, direction, addToast])
 
-  // Таймер визуального прогресса во время загрузки.
+  // Persist history
+  useEffect(() => {
+    if (traceHistory.length === 0) return
+    try {
+      sessionStorage.setItem(TRACE_HISTORY_KEY, JSON.stringify(traceHistory))
+    } catch {}
+  }, [traceHistory])
+
+  // Loading timer
   useEffect(() => {
     if (!loadingSince) return
     const id = window.setInterval(() => {
@@ -119,14 +154,12 @@ export default function TracePage() {
     return () => window.clearInterval(id)
   }, [loadingSince])
 
-  // Грубая оценка ожидания по параметрам трассировки.
   const estimatedSec = useMemo(() => {
     if (lastTraceMs > 0) {
       return Math.max(6, Math.min(180, Math.round(lastTraceMs / 1000)))
     }
     const dirFactor = direction === 'both' ? 2.0 : 1.15
     const depthFactor = Math.max(1, depth) * 4.2
-    // базовые сетевые задержки + обработка
     return Math.min(120, Math.max(8, Math.round(4 + depthFactor * dirFactor)))
   }, [depth, direction, lastTraceMs])
 
@@ -134,7 +167,6 @@ export default function TracePage() {
     if (!loading) return 0
     if (estimatedSec <= 0) return 10
     const ratio = elapsedSec / estimatedSec
-    // До ответа не показываем 100%, чтобы не «застрять» на полном.
     return Math.max(3, Math.min(95, Math.round(ratio * 100)))
   }, [loading, elapsedSec, estimatedSec])
 
@@ -145,6 +177,20 @@ export default function TracePage() {
     if (p < 85) return 'Собираю граф и статистику'
     return 'Финализирую ответ'
   }, [loadingProgressPct])
+
+  const saveCurrentToHistory = useCallback(() => {
+    if (!data) return
+    const alreadyExists = traceHistory.some(h => h.hash === hash && h.depth === depth && h.direction === direction)
+    if (alreadyExists) return
+    const entry: HistoryEntry = {
+      id: ++historyIdCounter,
+      hash, depth, direction, data, ts: Date.now(),
+    }
+    setTraceHistory(prev => {
+      const next = [entry, ...prev].slice(0, MAX_HISTORY)
+      return next
+    })
+  }, [data, hash, depth, direction, traceHistory])
 
   const handleTrace = useCallback(async (txHash: string) => {
     if (!txHash.trim()) return
@@ -158,23 +204,28 @@ export default function TracePage() {
     setLoadingSince(Date.now())
     setElapsedSec(0)
     setSelected(null)
+    setActiveHistoryId(null)
+    setError(null)
     const startedAt = Date.now()
     timeoutRef.current = window.setTimeout(() => {
       abortRef.current?.abort()
-      addToast('Трассировка отменена по таймауту (90с). Уменьши глубину или выбери одно направление.', 'error', 7000)
+      setError('Трассировка отменена по таймауту (90 сек). Попробуй уменьшить глубину или выбрать одно направление.')
     }, 90000)
     try {
       const result = await fetchTrace(txHash.trim(), depth, direction, abortRef.current.signal)
       setData(result)
+      setError(null)
       const duration = Date.now() - startedAt
       setLastTraceMs(duration)
       localStorage.setItem(TRACE_LAST_MS_KEY, String(duration))
       addToast(`Найдено ${result.stats.totalNodes} TX, ${result.stats.totalEdges} переходов`, 'success')
     } catch (err: any) {
       if (err?.name !== 'AbortError') {
-        addToast('Ошибка трассировки: ' + (err?.message || err), 'error', 5000)
+        const msg = err?.message || String(err)
+        setError(`Ошибка трассировки: ${msg}`)
+        addToast('Ошибка: ' + msg, 'error', 5000)
       } else if (elapsedSec > 1) {
-        addToast('Трассировка остановлена', 'error', 2500)
+        setError('Трассировка была отменена')
       }
     } finally {
       if (timeoutRef.current) {
@@ -186,12 +237,53 @@ export default function TracePage() {
     }
   }, [depth, direction, addToast, elapsedSec])
 
+  const handleChainTrace = useCallback((txHash: string) => {
+    saveCurrentToHistory()
+    setHash(txHash)
+    setConfirmHash(null)
+    handleTrace(txHash)
+  }, [saveCurrentToHistory, handleTrace])
+
+  const restoreFromHistory = useCallback((entry: HistoryEntry) => {
+    saveCurrentToHistory()
+    setHash(entry.hash)
+    setDepth(entry.depth)
+    setDirection(entry.direction)
+    setData(entry.data)
+    setSelected(null)
+    setActiveHistoryId(entry.id)
+    setHistoryOpen(false)
+    addToast(`Восстановлено: ${shortAddr(entry.hash)}`, 'info', 1500)
+  }, [saveCurrentToHistory, addToast])
+
+  const removeFromHistory = useCallback((id: number) => {
+    setTraceHistory(prev => prev.filter(h => h.id !== id))
+    if (activeHistoryId === id) setActiveHistoryId(null)
+  }, [activeHistoryId])
+
+  const handleClearAll = useCallback(() => {
+    abortRef.current?.abort()
+    setHash('')
+    setData(null)
+    setError(null)
+    setSelected(null)
+    setTraceHistory([])
+    setActiveHistoryId(null)
+    setHistoryOpen(false)
+    setLoading(false)
+    setLoadingSince(null)
+    try { sessionStorage.removeItem(TRACE_SESSION_KEY) } catch {}
+    try { sessionStorage.removeItem(TRACE_HISTORY_KEY) } catch {}
+    addToast('Трассировка сброшена', 'info', 1500)
+  }, [addToast])
+
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    saveCurrentToHistory()
     handleTrace(hash)
   }
 
-  // Группировка узлов по depth для timeline-раскладки
+  // Node grouping for timeline
   const lanes = useMemo(() => {
     if (!data) return new Map<number, TraceNode[]>()
     const map = new Map<number, TraceNode[]>()
@@ -200,7 +292,6 @@ export default function TracePage() {
       arr.push(n)
       map.set(n.depth, arr)
     })
-    // sort by time within each lane
     for (const arr of map.values()) {
       arr.sort((a, b) => (a.time || 0) - (b.time || 0))
     }
@@ -217,17 +308,6 @@ export default function TracePage() {
     return m
   }, [data])
 
-  // ───────────────────────────────────────────────────────────────────────
-  // Flow-метрика: сколько BTC реально дошло до root через каждый шаг.
-  //
-  //   • Edge.value = сумма конкретного output, который был истрачен.
-  //   • Для backward (depth<0) edge идёт от старшей TX к младшей (ближе к root).
-  //     Сумма edge.value, исходящих из узлов депзы d, — это «дотекло до root через слой d».
-  //   • Для forward (depth>0) edge идёт от младшей к старшей. Сумма edge.value,
-  //     ВХОДЯЩИХ в узлы депзы d, — это «вышло из root и достигло слоя d».
-  //
-  // Так пользователь видит реальный «расход» средств root, а не суммы случайных
-  // других выходов чужих транзакций (которые не имеют отношения к нашим деньгам).
   const flowByLane = useMemo(() => {
     const m = new Map<number, number>()
     if (!data) return m
@@ -235,17 +315,12 @@ export default function TracePage() {
       const from = nodeMap.get(e.from)
       const to = nodeMap.get(e.to)
       if (!from || !to) return
-      // backward: edge идёт от depth -d (старая) → depth -(d-1) (новая, ближе к root)
-      // → flow слоя -d = сумма исходящих edge.value
       if (from.depth < 0) {
         m.set(from.depth, (m.get(from.depth) || 0) + e.value)
       } else if (to.depth > 0) {
-        // forward: edge идёт от depth (d-1) → depth d
-        // → flow слоя d = сумма входящих edge.value
         m.set(to.depth, (m.get(to.depth) || 0) + e.value)
       }
     })
-    // ROOT: в заголовке колонки — сумма входов (что пришло «слева» в эту TX)
     if (data.nodes.length > 0) {
       const root = data.nodes.find(n => n.isRoot)
       if (root) m.set(0, root.totalIn)
@@ -253,9 +328,6 @@ export default function TracePage() {
     return m
   }, [data, nodeMap])
 
-  // Сколько value «через» каждый отдельный TX-узел дошло до root.
-  // Для backward TX: сумма исходящих edges (то есть value отправлений ВНИЗ цепи в сторону root).
-  // Для forward TX: сумма входящих edges (то есть сколько денег root «дотекло» сюда).
   const nodeFlowToRoot = useMemo(() => {
     const m = new Map<string, number>()
     if (!data) return m
@@ -275,6 +347,19 @@ export default function TracePage() {
   return (
     <div style={{ position: 'relative', minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)', overflow: 'hidden' }}>
       <Toast />
+
+      {/* Confirm modal */}
+      {confirmHash && (
+        <ConfirmTraceModal
+          hash={confirmHash}
+          depth={depth}
+          setDepth={setDepth}
+          direction={direction}
+          setDirection={setDirection}
+          onConfirm={() => handleChainTrace(confirmHash)}
+          onCancel={() => setConfirmHash(null)}
+        />
+      )}
 
       {/* Background gradient */}
       <div style={{
@@ -309,14 +394,42 @@ export default function TracePage() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button
-            onClick={() => navigate('/forensics')}
-            style={{
-              padding: '7px 14px', borderRadius: 8,
-              background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.3)',
-              color: '#60a5fa', fontSize: 12, fontWeight: 500, cursor: 'pointer',
-            }}
-          >Граф связей</button>
+          {traceHistory.length > 0 && (
+            <button
+              onClick={() => setHistoryOpen(o => !o)}
+              style={{
+                padding: '7px 14px', borderRadius: 8,
+                background: historyOpen ? 'rgba(139,92,246,0.2)' : 'rgba(139,92,246,0.1)',
+                border: `1px solid ${historyOpen ? 'rgba(139,92,246,0.5)' : 'rgba(139,92,246,0.3)'}`,
+                color: '#a78bfa', fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 6,
+                transition: 'all .15s',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+              </svg>
+              История ({traceHistory.length})
+            </button>
+          )}
+          {(data || traceHistory.length > 0) && (
+            <button
+              onClick={handleClearAll}
+              style={{
+                padding: '7px 14px', borderRadius: 8,
+                background: 'rgba(248,113,113,0.08)',
+                border: '1px solid rgba(248,113,113,0.2)',
+                color: '#fca5a5', fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 6,
+                transition: 'all .15s',
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+              </svg>
+              Сбросить всё
+            </button>
+          )}
           <button
             onClick={() => navigate('/')}
             style={{
@@ -327,6 +440,18 @@ export default function TracePage() {
           >На главную</button>
         </div>
       </header>
+
+      {/* History panel */}
+      {historyOpen && traceHistory.length > 0 && (
+        <HistoryPanel
+          entries={traceHistory}
+          activeId={activeHistoryId}
+          currentHash={hash}
+          onRestore={restoreFromHistory}
+          onRemove={removeFromHistory}
+          onClose={() => setHistoryOpen(false)}
+        />
+      )}
 
       {/* Search */}
       <div style={{ position: 'relative', zIndex: 1, padding: '24px', maxWidth: 1280, margin: '0 auto' }}>
@@ -405,8 +530,49 @@ export default function TracePage() {
           </div>
         )}
 
-        {/* Empty / loading */}
-        {!data && !loading && (
+        {/* Persistent error */}
+        {error && !loading && (
+          <div style={{
+            marginTop: 16, padding: '16px 20px', borderRadius: 12,
+            background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.25)',
+            display: 'flex', alignItems: 'flex-start', gap: 12,
+          }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+              background: 'rgba(248,113,113,0.15)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f87171" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+              </svg>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#fca5a5', marginBottom: 4 }}>Не удалось выполнить трассировку</div>
+              <div style={{ fontSize: 12, color: '#fca5a5', opacity: 0.8, lineHeight: 1.5 }}>{error}</div>
+              <button
+                type="button"
+                onClick={() => { setError(null); handleTrace(hash) }}
+                disabled={!hash.trim()}
+                style={{
+                  marginTop: 10, padding: '7px 16px', borderRadius: 8, fontSize: 12, fontWeight: 500,
+                  background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.3)',
+                  color: '#fca5a5', cursor: hash.trim() ? 'pointer' : 'not-allowed',
+                }}
+              >Попробовать снова</button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setError(null)}
+              style={{
+                background: 'transparent', border: 'none', color: '#fca5a5', opacity: 0.5,
+                cursor: 'pointer', fontSize: 16, flexShrink: 0, padding: 4,
+              }}
+            >×</button>
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!data && !loading && !error && (
           <div style={{
             marginTop: 60, textAlign: 'center', padding: '40px 20px',
             color: 'var(--text3)', fontSize: 13, lineHeight: 1.6,
@@ -480,7 +646,6 @@ export default function TracePage() {
           <AddressExplorer data={data} onCopied={msg => addToast(msg, 'success', 1800)} />
         )}
 
-        {/* Объяснение, как читать таймлайн */}
         {data && data.nodes.length > 0 && (
           <ExplainPanel />
         )}
@@ -498,6 +663,7 @@ export default function TracePage() {
               setHoverNode={setHoverNode}
               selected={selected}
               setSelected={setSelected}
+              onTraceHash={h => setConfirmHash(h)}
             />
           </div>
         )}
@@ -509,10 +675,259 @@ export default function TracePage() {
           0%, 100% { box-shadow: 0 0 0 0 rgba(96,165,250,.55); }
           50% { box-shadow: 0 0 0 6px rgba(96,165,250,0); }
         }
+        @keyframes modalIn {
+          from { opacity: 0; transform: scale(0.95) translateY(8px); }
+          to   { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        @keyframes slideDown {
+          from { opacity: 0; transform: translateY(-8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
       `}</style>
     </div>
   )
 }
+
+// ─── Confirm trace modal ────────────────────────────────────────────────────
+
+function ConfirmTraceModal({ hash, depth, setDepth, direction, setDirection, onConfirm, onCancel }: {
+  hash: string
+  depth: number
+  setDepth: (d: number) => void
+  direction: 'both' | 'forward' | 'backward'
+  setDirection: (d: 'both' | 'forward' | 'backward') => void
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel()
+      if (e.key === 'Enter') onConfirm()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onCancel, onConfirm])
+
+  return (
+    <div
+      onClick={e => { if (e.target === e.currentTarget) onCancel() }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1000,
+        background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 24,
+      }}
+    >
+      <div style={{
+        background: '#0c1222', border: '1px solid rgba(139,92,246,0.35)',
+        borderRadius: 16, width: '100%', maxWidth: 520,
+        animation: 'modalIn .2s ease-out',
+        boxShadow: '0 24px 80px rgba(0,0,0,0.6), 0 0 40px rgba(139,92,246,0.12)',
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '20px 24px 16px',
+          borderBottom: '1px solid var(--border)',
+          display: 'flex', alignItems: 'center', gap: 12,
+        }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 10,
+            background: 'linear-gradient(135deg, rgba(139,92,246,0.2), rgba(59,130,246,0.15))',
+            border: '1px solid rgba(139,92,246,0.3)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+            </svg>
+          </div>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>Запустить анализ транзакции?</div>
+            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>Текущий результат будет сохранён в историю</div>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: '16px 24px 20px' }}>
+          <div style={{
+            padding: '10px 14px', borderRadius: 8,
+            background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)',
+            fontFamily: 'var(--mono)', fontSize: 12, color: '#a78bfa',
+            wordBreak: 'break-all', lineHeight: 1.5, marginBottom: 16,
+          }}>
+            {hash}
+          </div>
+
+          <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Глубина</div>
+              <input
+                type="number" min={1} max={8}
+                value={depth}
+                onChange={e => setDepth(Math.max(1, Math.min(8, Number(e.target.value) || 5)))}
+                style={{
+                  width: '100%', padding: '9px 12px', borderRadius: 8, fontSize: 13,
+                  background: 'rgba(0,0,0,0.32)', border: '1px solid var(--border)', color: 'var(--text)',
+                }}
+              />
+            </div>
+            <div style={{ flex: 2 }}>
+              <div style={{ fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Направление</div>
+              <select
+                value={direction}
+                onChange={e => setDirection(e.target.value as any)}
+                style={{
+                  width: '100%', padding: '9px 12px', borderRadius: 8, fontSize: 13,
+                  background: 'rgba(0,0,0,0.32)', border: '1px solid var(--border)', color: 'var(--text)',
+                }}
+              >
+                <option value="both">↔ В обе стороны</option>
+                <option value="backward">← Откуда пришли</option>
+                <option value="forward">→ Куда ушли</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <button
+              onClick={onCancel}
+              style={{
+                padding: '10px 20px', borderRadius: 8, fontSize: 13,
+                background: 'transparent', border: '1px solid var(--border)',
+                color: 'var(--text2)', cursor: 'pointer',
+              }}
+            >Отмена</button>
+            <button
+              onClick={onConfirm}
+              style={{
+                padding: '10px 24px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                background: 'linear-gradient(135deg, #7c3aed, #2563eb)',
+                border: 'none', color: '#fff', cursor: 'pointer',
+                boxShadow: '0 4px 14px rgba(124,58,237,0.35)',
+              }}
+            >Запустить трассировку</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── History panel ──────────────────────────────────────────────────────────
+
+function HistoryPanel({ entries, activeId, currentHash, onRestore, onRemove, onClose }: {
+  entries: HistoryEntry[]
+  activeId: number | null
+  currentHash: string
+  onRestore: (e: HistoryEntry) => void
+  onRemove: (id: number) => void
+  onClose: () => void
+}) {
+  return (
+    <div style={{
+      position: 'sticky', top: 56, zIndex: 15,
+      background: 'rgba(5,8,16,0.95)', backdropFilter: 'blur(16px)',
+      borderBottom: '1px solid var(--border)',
+      animation: 'slideDown .2s ease-out',
+    }}>
+      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '12px 24px' }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          marginBottom: 10,
+        }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#a78bfa', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+            </svg>
+            История анализов — кликни для возврата
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 6,
+              width: 26, height: 26, color: 'var(--text3)', cursor: 'pointer',
+              fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >×</button>
+        </div>
+
+        <div style={{
+          display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4,
+        }}>
+          {entries.map(entry => {
+            const isActive = entry.id === activeId
+            const isCurrent = entry.hash === currentHash && !isActive
+            const age = timeAgo(entry.ts)
+            return (
+              <div
+                key={entry.id}
+                style={{
+                  flexShrink: 0,
+                  padding: '10px 14px',
+                  borderRadius: 10,
+                  background: isActive
+                    ? 'rgba(139,92,246,0.15)'
+                    : isCurrent
+                      ? 'rgba(59,130,246,0.1)'
+                      : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${isActive ? 'rgba(139,92,246,0.4)' : isCurrent ? 'rgba(59,130,246,0.25)' : 'var(--border)'}`,
+                  cursor: 'pointer',
+                  transition: 'all .15s',
+                  minWidth: 200,
+                  position: 'relative',
+                }}
+                onClick={() => onRestore(entry)}
+              >
+                <button
+                  onClick={e => { e.stopPropagation(); onRemove(entry.id) }}
+                  style={{
+                    position: 'absolute', top: 4, right: 4,
+                    background: 'transparent', border: 'none',
+                    color: 'var(--text4)', cursor: 'pointer', fontSize: 12,
+                    width: 20, height: 20, borderRadius: 4,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                  title="Убрать из истории"
+                >×</button>
+
+                <div style={{
+                  fontFamily: 'var(--mono)', fontSize: 11,
+                  color: isActive ? '#a78bfa' : 'var(--text)',
+                  fontWeight: 600, marginBottom: 4,
+                }}>{shortAddr(entry.hash)}</div>
+
+                <div style={{ display: 'flex', gap: 8, fontSize: 10, color: 'var(--text3)' }}>
+                  <span>{entry.data.stats.totalNodes} TX</span>
+                  <span>·</span>
+                  <span>глубина {entry.depth}</span>
+                  <span>·</span>
+                  <span>{dirLabel(entry.direction)}</span>
+                </div>
+
+                <div style={{ fontSize: 9, color: 'var(--text4)', marginTop: 4 }}>{age}</div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function dirLabel(d: string) {
+  if (d === 'both') return '↔ обе'
+  if (d === 'backward') return '← назад'
+  return '→ вперёд'
+}
+
+function timeAgo(ts: number) {
+  const diff = (Date.now() - ts) / 1000
+  if (diff < 60) return 'только что'
+  if (diff < 3600) return `${Math.floor(diff / 60)}м назад`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}ч назад`
+  return `${Math.floor(diff / 86400)}д назад`
+}
+
+// ─── Existing sub-components ────────────────────────────────────────────────
 
 function ExplainPanel() {
   const [open, setOpen] = useState(false)
@@ -740,11 +1155,12 @@ interface TimelineProps {
   setHoverNode: (n: TraceNode | null) => void
   selected: string | null
   setSelected: (h: string | null) => void
+  onTraceHash: (hash: string) => void
 }
 
 function Timeline({
   data, lanes, sortedDepths, flowByLane, nodeFlowToRoot, onCopied,
-  setHoverNode, selected, setSelected,
+  setHoverNode, selected, setSelected, onTraceHash,
 }: TimelineProps) {
   const [laneLimit, setLaneLimit] = useState<Record<number, number>>({})
   const getLaneLimit = (d: number) => laneLimit[d] ?? 60
@@ -760,7 +1176,6 @@ function Timeline({
         const txs = lanes.get(d) || []
         const isRoot = d === 0
         const isPast = d < 0
-        const isFuture = d > 0
         const laneColor = isRoot ? '#60a5fa' : isPast ? '#06b6d4' : '#10b981'
         const laneTitle = isRoot
           ? 'Запрошенная транзакция'
@@ -798,6 +1213,7 @@ function Timeline({
                   isSelected={isSelected}
                   onClick={() => setSelected(isSelected ? null : tx.hash)}
                   onHover={(h: boolean) => setHoverNode(h ? tx : null)}
+                  onTraceHash={onTraceHash}
                 />
               )
             })}
@@ -835,9 +1251,10 @@ interface TxCardProps {
   isSelected: boolean
   onClick: () => void
   onHover: (over: boolean) => void
+  onTraceHash: (hash: string) => void
 }
 
-function TxCard({ tx, laneColor, isRoot, flowToRoot, onCopied, isSelected, onClick, onHover }: TxCardProps) {
+function TxCard({ tx, laneColor, isRoot, flowToRoot, onCopied, isSelected, onClick, onHover, onTraceHash }: TxCardProps) {
   const date = tx.time
     ? new Date(tx.time * 1000).toLocaleString('ru', { dateStyle: 'short', timeStyle: 'short' })
     : 'не подтверждена'
@@ -863,11 +1280,30 @@ function TxCard({ tx, laneColor, isRoot, flowToRoot, onCopied, isSelected, onCli
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         marginBottom: 8, gap: 8, flexWrap: 'wrap',
       }}>
-        <div style={{
-          fontSize: 11, fontFamily: 'var(--mono)',
-          color: isRoot ? '#60a5fa' : 'var(--text)',
-          fontWeight: 600,
-        }}>{shortAddr(tx.hash)}</div>
+        {/* Clickable hash — triggers chain trace */}
+        <button
+          type="button"
+          onClick={e => {
+            e.stopPropagation()
+            if (!isRoot) onTraceHash(tx.hash)
+          }}
+          title={isRoot ? tx.hash : `Анализировать ${shortAddr(tx.hash)}`}
+          style={{
+            fontSize: 11, fontFamily: 'var(--mono)',
+            color: isRoot ? '#60a5fa' : '#c4b5fd',
+            fontWeight: 600,
+            background: 'none', border: 'none', padding: 0,
+            cursor: isRoot ? 'default' : 'pointer',
+            textDecoration: isRoot ? 'none' : 'underline',
+            textDecorationColor: 'rgba(196,181,253,0.3)',
+            textUnderlineOffset: 3,
+            transition: 'color .15s',
+          }}
+          onMouseEnter={e => { if (!isRoot) e.currentTarget.style.color = '#a78bfa' }}
+          onMouseLeave={e => { if (!isRoot) e.currentTarget.style.color = '#c4b5fd' }}
+        >
+          {shortAddr(tx.hash)}
+        </button>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
           <CopyTiny text={tx.hash} aria="Копировать txid целиком" onCopied={onCopied} />
           {isRoot && (
@@ -924,6 +1360,27 @@ function TxCard({ tx, laneColor, isRoot, flowToRoot, onCopied, isSelected, onCli
         }}>
           <DetailSection title="Входы" items={tx.inputs} accent="#10b981" onCopied={onCopied} />
           <DetailSection title="Выходы" items={tx.outputs} accent="#f87171" onCopied={onCopied} />
+
+          {!isRoot && (
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); onTraceHash(tx.hash) }}
+              style={{
+                fontSize: 11, color: '#a78bfa', textDecoration: 'none',
+                padding: '7px 10px', background: 'rgba(139,92,246,.1)',
+                border: '1px solid rgba(139,92,246,.25)',
+                borderRadius: 6, textAlign: 'center', marginTop: 2,
+                cursor: 'pointer', fontWeight: 500,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+              </svg>
+              Анализировать эту TX
+            </button>
+          )}
+
           <a
             href={tx.explorerUrl}
             target="_blank" rel="noopener"
@@ -931,7 +1388,7 @@ function TxCard({ tx, laneColor, isRoot, flowToRoot, onCopied, isSelected, onCli
             style={{
               fontSize: 11, color: '#60a5fa', textDecoration: 'none',
               padding: '6px 10px', background: 'rgba(96,165,250,.08)',
-              borderRadius: 6, textAlign: 'center', marginTop: 4,
+              borderRadius: 6, textAlign: 'center',
             }}
           >Открыть в mempool.space ↗</a>
         </div>

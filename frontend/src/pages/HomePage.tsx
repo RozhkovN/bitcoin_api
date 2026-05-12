@@ -472,19 +472,6 @@ export default function HomePage() {
             </svg>
             Trace
           </button>
-          <button
-            onClick={() => navigate('/forensics')}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)', color: '#60a5fa', fontSize: 13, fontWeight: 500, cursor: 'pointer', transition: 'all .2s' }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(59,130,246,0.18)'; e.currentTarget.style.borderColor = 'rgba(59,130,246,0.5)' }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(59,130,246,0.1)'; e.currentTarget.style.borderColor = 'rgba(59,130,246,0.25)' }}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="3" /><circle cx="4" cy="6" r="2" /><circle cx="20" cy="6" r="2" /><circle cx="4" cy="18" r="2" /><circle cx="20" cy="18" r="2" />
-              <line x1="6" y1="6" x2="10" y2="11" /><line x1="18" y1="6" x2="14" y2="11" />
-              <line x1="6" y1="18" x2="10" y2="13" /><line x1="18" y1="18" x2="14" y2="13" />
-            </svg>
-            Граф
-          </button>
         </div>
       </nav>
 
@@ -541,41 +528,6 @@ export default function HomePage() {
         {/* Profile workbench */}
         {profileAddr && (
           <div style={{ animation: 'fadeIn .4s both' }}>
-            {/* Forensics banner */}
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 16, padding: '14px 20px', marginBottom: 20,
-              background: 'linear-gradient(135deg,rgba(37,99,235,0.12),rgba(8,145,178,0.08))',
-              border: '1px solid rgba(59,130,246,0.25)', borderRadius: 12,
-            }}>
-              <div style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 10, background: 'linear-gradient(135deg,#2563eb,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 16px rgba(59,130,246,0.3)' }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="3" /><circle cx="4" cy="6" r="2" /><circle cx="20" cy="6" r="2" /><circle cx="4" cy="18" r="2" /><circle cx="20" cy="18" r="2" />
-                  <line x1="6" y1="6" x2="10" y2="11" /><line x1="18" y1="6" x2="14" y2="11" />
-                  <line x1="6" y1="18" x2="10" y2="13" /><line x1="18" y1="18" x2="14" y2="13" />
-                </svg>
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', marginBottom: 2 }}>Открыть граф транзакций</div>
-                <div style={{ fontSize: 12, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  Визуализировать связи и риски для{' '}
-                  <span style={{ color: '#60a5fa', fontFamily: 'monospace' }}>{shortAddr(profileAddr)}</span>
-                </div>
-              </div>
-              <button
-                onClick={() => navigate(`/forensics?address=${encodeURIComponent(profileAddr)}`)}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 18px', whiteSpace: 'nowrap',
-                  background: 'linear-gradient(135deg,#2563eb,#0891b2)', borderRadius: 8,
-                  color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer',
-                  border: 'none', flexShrink: 0, boxShadow: '0 4px 14px rgba(59,130,246,0.3)', transition: 'box-shadow .2s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.boxShadow = '0 4px 20px rgba(59,130,246,0.5)'}
-                onMouseLeave={e => e.currentTarget.style.boxShadow = '0 4px 14px rgba(59,130,246,0.3)'}
-              >
-                Открыть Forensics →
-              </button>
-            </div>
-
             {/* Address headline */}
             <div style={{ marginBottom: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>

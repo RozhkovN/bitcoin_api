@@ -76,31 +76,28 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	indexHTML, _ := fs.ReadFile(webFS, "index.html")
 	static := http.FileServer(http.FS(webFS))
 	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Embedded static assets can be aggressively cached by browsers.
-		// Disable caching to ensure UI text/data updates are reflected immediately.
 		if r.Method == http.MethodGet {
 			w.Header().Set("Cache-Control", "no-store, max-age=0")
 			w.Header().Set("Pragma", "no-cache")
 		}
 
-		req := r
-		// SPA: BrowserRouter routes like /forensics only exist client-side —
-		// on refresh the server must serve index.html instead of a missing file path.
+		// SPA fallback: client-side routes like /trace don't exist as files —
+		// serve index.html directly so React Router handles the path.
+		// Cannot rewrite URL to /index.html because http.FileServer 301-redirects
+		// that to ./ which breaks SPA routing.
 		if r.Method == http.MethodGet && r.URL.Path != "/" {
 			rel := strings.TrimPrefix(path.Clean("/"+strings.TrimPrefix(r.URL.Path, "/")), "/")
 			if _, openErr := webFS.Open(rel); errors.Is(openErr, fs.ErrNotExist) {
-				dup := new(http.Request)
-				*dup = *r
-				u := *r.URL
-				u.Path = "/index.html"
-				dup.URL = &u
-				req = dup
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.Write(indexHTML)
+				return
 			}
 		}
 
-		static.ServeHTTP(w, req)
+		static.ServeHTTP(w, r)
 	}))
 
 	port := strings.TrimSpace(os.Getenv("PORT"))

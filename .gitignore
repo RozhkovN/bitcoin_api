@@ -1,5 +1,6 @@
 # Ignore temporary Vite config backups and local dev artifacts
-/frontend/vite.config.js.timestamp-*.mjs
+/frontend/vite.config.ts.timestamp-*.mjs
+/frontend/vite.config.d.ts
 
 # TypeScript build metadata
 **/*.tsbuildinfo

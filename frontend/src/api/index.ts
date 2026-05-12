@@ -1,25 +1,4 @@
-import type { GraphResponse, MempoolTx } from '@/types'
-
 const BASE = import.meta.env.DEV ? '' : ''
-
-export async function fetchGraph(
-  chain: 'bitcoin' | 'ethereum',
-  address: string,
-  maxTx: number,
-  signal?: AbortSignal,
-): Promise<GraphResponse> {
-  const endpoint = chain === 'bitcoin' ? '/api/btc/graph' : '/api/eth/graph'
-  const url = `${BASE}${endpoint}?address=${encodeURIComponent(address)}&maxTx=${maxTx}`
-  const res = await fetch(url, { signal, credentials: 'include' })
-  if (!res.ok) throw new Error(`API error ${res.status}`)
-  return res.json()
-}
-
-export async function fetchTxDetail(txid: string): Promise<MempoolTx> {
-  const res = await fetch(`https://mempool.space/api/tx/${txid}`)
-  if (!res.ok) throw new Error(`Mempool error ${res.status}`)
-  return res.json()
-}
 
 // ─── Trace ────────────────────────────────────────────────────────────────
 export interface TraceIO {
