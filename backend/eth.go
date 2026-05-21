@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -420,8 +421,12 @@ func fetchEthReceiptSuccessMap(ctx context.Context, hashes []string) map[string]
 	return out
 }
 
-func fetchEthSummary(ctx context.Context, address string) (EthSummaryResponse, error) {
+// fetchEthSummaryLive делает реальный запрос к Blockscout / RPC.
+// Не трогает кэш — только сетевые вызовы.
+func fetchEthSummaryLive(ctx context.Context, address string) (EthSummaryResponse, error) {
 	address = strings.TrimSpace(address)
+	const chain = "ethereum"
+
 	wei, err := fetchEthBalanceWei(ctx, address)
 	if err != nil {
 		return EthSummaryResponse{}, err
@@ -433,7 +438,7 @@ func fetchEthSummary(ctx context.Context, address string) (EthSummaryResponse, e
 	var c ethV2Counters
 	ntx := -1
 	_ = fetchJSONRetry(ctx, countersURL, &c, ethSingleFetchTimeout, ethRetries)
-	if v, err := strconv.Atoi(strings.TrimSpace(c.TransactionsCount)); err == nil && strings.TrimSpace(c.TransactionsCount) != "" {
+	if v, err2 := strconv.Atoi(strings.TrimSpace(c.TransactionsCount)); err2 == nil && strings.TrimSpace(c.TransactionsCount) != "" {
 		ntx = v
 	}
 
@@ -441,14 +446,14 @@ func fetchEthSummary(ctx context.Context, address string) (EthSummaryResponse, e
 	if ntx == 0 {
 		tr, ts = 0, 0
 	} else if ntx > 0 && ntx <= ethSummaryTotalsMaxTx {
-		txs, _, err := paginateEthTxlist(ctx, address, ntx)
-		if err == nil {
+		txs, _, err2 := paginateEthTxlist(ctx, address, ntx)
+		if err2 == nil {
 			tr, ts = ethNaiveTotalsETH(address, txs)
 		}
 	}
 
 	return EthSummaryResponse{
-		Chain:         "ethereum",
+		Chain:         chain,
 		Address:       address,
 		NTx:           ntx,
 		Balance:       roundTo(weiToEth(wei), 8),
@@ -457,6 +462,40 @@ func fetchEthSummary(ctx context.Context, address string) (EthSummaryResponse, e
 		NUnredeemed:   0,
 	}, nil
 }
+
+// fetchEthSummary — кэш-обёртка над fetchEthSummaryLive.
+//   • Есть в DB  → мгновенный ответ + фоновое обновление кэша
+//   • Нет в DB   → блокирующий запрос к API, результат кэшируется
+func fetchEthSummary(ctx context.Context, address string) (EthSummaryResponse, error) {
+	address = strings.TrimSpace(address)
+	const chain = "ethereum"
+
+	if cached, ok := summaryCacheGet(address, chain); ok {
+		var s EthSummaryResponse
+		if json.Unmarshal(cached, &s) == nil {
+			log.Printf("[eth] summary cache hit: %s", shortAddr(address))
+			asyncSummaryRefresh(address, chain, func() ([]byte, error) {
+				r, err := fetchEthSummaryLive(context.Background(), address)
+				if err != nil {
+					return nil, err
+				}
+				return json.Marshal(r)
+			})
+			return s, nil
+		}
+	}
+
+	// Первый запрос для этого адреса — блокирующий
+	result, err := fetchEthSummaryLive(ctx, address)
+	if err != nil {
+		return EthSummaryResponse{}, err
+	}
+	if b, e := json.Marshal(result); e == nil {
+		summaryCacheSet(address, chain, b)
+	}
+	return result, nil
+}
+
 
 func analyzeEthereumRich(ctx context.Context, address string, maxFetch int, filters *ethFilterParams, includeInternal bool) (EthAnalyzeResponse, error) {
 	requestedIn := maxFetch

@@ -121,6 +121,15 @@ func dbMigrate(db *sql.DB) error {
 	CREATE INDEX IF NOT EXISTS idx_wtx_addr_bh
 		ON wallet_tx(address, chain, block_height DESC);
 
+	-- Кэш summary (balance, nTx и т.д.) — TTL 5 минут
+	CREATE TABLE IF NOT EXISTS summary_cache (
+		address   TEXT NOT NULL,
+		chain     TEXT NOT NULL,
+		payload   TEXT NOT NULL,
+		cached_at INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (address, chain)
+	);
+
 	-- Кэш результатов Trace (по txid/depth/direction)
 	CREATE TABLE IF NOT EXISTS trace_cache (
 		cache_key    TEXT PRIMARY KEY,

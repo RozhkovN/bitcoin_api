@@ -24,8 +24,87 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"sync"
 	"time"
 )
+
+// ─── Summary cache ────────────────────────────────────────────────────────────
+
+// summaryCacheGet возвращает закэшированный JSON summary.
+// Без TTL: если данные есть — отдаём сразу; актуальность обеспечивает фоновое обновление.
+func summaryCacheGet(address, chain string) ([]byte, bool) {
+	var payload string
+	err := globalDB.QueryRow(
+		`SELECT payload FROM summary_cache WHERE address=? AND chain=?`,
+		address, chain,
+	).Scan(&payload)
+	if err != nil || payload == "" {
+		return nil, false
+	}
+	return []byte(payload), true
+}
+
+// ─── Async summary refresh ────────────────────────────────────────────────────
+
+var summaryRefreshActive sync.Map
+
+// asyncSummaryRefresh обновляет кэш summary в фоне (одна горутина на адрес).
+// fn должна вернуть свежий JSON payload или ошибку.
+func asyncSummaryRefresh(address, chain string, fn func() ([]byte, error)) {
+	key := "summary:" + address + ":" + chain
+	if _, loaded := summaryRefreshActive.LoadOrStore(key, struct{}{}); loaded {
+		return // уже обновляется
+	}
+	go func() {
+		defer summaryRefreshActive.Delete(key)
+		data, err := fn()
+		if err != nil {
+			log.Printf("[cache] bg summary refresh error (%s/%s): %v", chain, shortTxid(address), err)
+			return
+		}
+		if len(data) > 0 {
+			summaryCacheSet(address, chain, data)
+			log.Printf("[cache] bg summary refreshed: %s/%s", chain, shortTxid(address))
+		}
+	}()
+}
+
+// summaryCacheSet сохраняет (или обновляет) JSON summary в кэш.
+func summaryCacheSet(address, chain string, data []byte) {
+	if len(data) == 0 {
+		return
+	}
+	globalDB.Exec(`
+		INSERT INTO summary_cache(address, chain, payload, cached_at)
+		VALUES(?,?,?,?)
+		ON CONFLICT(address, chain) DO UPDATE SET payload=excluded.payload, cached_at=excluded.cached_at`,
+		address, chain, string(data), time.Now().Unix(),
+	)
+}
+
+// ─── Async forward sync ───────────────────────────────────────────────────────
+
+// fwdSyncActive предотвращает параллельный запуск нескольких горутин
+// forward-sync для одного и того же адреса.
+var fwdSyncActive sync.Map
+
+// asyncForwardSync запускает cacheForwardSync в фоне и немедленно возвращает.
+// Если горутина для этого адреса уже запущена — новую не создаёт.
+func asyncForwardSync(address, chain string) {
+	key := address + ":" + chain
+	if _, loaded := fwdSyncActive.LoadOrStore(key, struct{}{}); loaded {
+		return // уже синхронизируется
+	}
+	go func() {
+		defer fwdSyncActive.Delete(key)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		added := cacheForwardSync(ctx, address, chain)
+		if added > 0 {
+			log.Printf("[cache] bg forward-sync: +%d TX for %s", added, shortTxid(address))
+		}
+	}()
+}
 
 // ─── Чтение ──────────────────────────────────────────────────────────────────
 
@@ -220,18 +299,14 @@ func fetchBtcTxViewsCached(ctx context.Context, address string, want int) ([]Btc
 	cachedCount := cacheCountTx(address, chain)
 	log.Printf("[cache] %s: %d cached, want %d", shortTxid(address), cachedCount, want)
 
-	// ── 1. Forward sync: подхватываем новые TX ──
+	// ── 1. Forward sync ASYNC: не блокируем ответ, подхватываем новые TX в фоне ──
 	if cachedCount > 0 {
-		added := cacheForwardSync(ctx, address, chain)
-		if added > 0 {
-			cachedCount += added
-			log.Printf("[cache] forward sync: +%d TX", added)
-		}
+		asyncForwardSync(address, chain)
 	}
 
 	// ── 2. Достаточно в кэше? Отдаём сразу ──
 	if cachedCount >= want {
-		log.Printf("[cache] %s: serving %d TX from cache", shortTxid(address), want)
+		log.Printf("[cache] %s: serving %d TX from cache (bg sync launched)", shortTxid(address), want)
 		return cacheGetTxViews(address, chain, want), nil
 	}
 

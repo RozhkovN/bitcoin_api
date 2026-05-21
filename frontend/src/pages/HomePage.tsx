@@ -39,6 +39,29 @@ interface AnalyzeResult {
 
 type Chain = 'BTC' | 'ETH' | null
 
+// ─── Wallet History ────────────────────────────────────────────────────────────
+const HISTORY_KEY = 'wallet_history_v1'
+const MAX_HISTORY = 15
+
+function loadHistory(): string[] {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY)
+    if (!raw) return []
+    return JSON.parse(raw) as string[]
+  } catch { return [] }
+}
+
+function saveToHistory(addr: string) {
+  const h = loadHistory().filter(a => a !== addr)
+  h.unshift(addr)
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, MAX_HISTORY)))
+}
+
+function removeFromHistory(addr: string) {
+  const h = loadHistory().filter(a => a !== addr)
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(h))
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const BTC_RE = /^(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,62}$/i
 const ETH_RE = /^0x[a-fA-F0-9]{40}$/
@@ -53,11 +76,6 @@ function detectChain(addr: string): Chain {
 function shortAddr(addr: string) {
   if (!addr || addr.length < 14) return addr || '—'
   return `${addr.slice(0, 10)}…${addr.slice(-8)}`
-}
-
-function shortHash(v: string, max = 40) {
-  if (!v) return '—'
-  return v.length > max ? `${v.slice(0, max)}…` : v
 }
 
 function fmtNum(v: number | undefined | null, decimals = 8) {
@@ -146,7 +164,6 @@ function HexCanvas() {
 }
 
 function MetricCard({ title, value, delay = 0 }: { title: string; value: string; delay?: number }) {
-  // Shrink font if value is long to prevent overflow
   const fontSize = value.length > 18 ? 14 : value.length > 12 ? 17 : 20
   return (
     <div style={{
@@ -184,7 +201,7 @@ function IoSection({ title, items, unit, highlightAddr, accent = 'neutral' }: Io
           </span>
         </div>
         <span style={{ fontFamily: 'var(--mono, monospace)', fontSize: 11.5, color: '#e2e8f0' }} title={`${fmtNum(total, 8)} ${unit}`}>
-          Σ {fmtNum(total)} {unit}
+          {fmtNum(total)} {unit}
         </span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
@@ -218,6 +235,122 @@ function IoSection({ title, items, unit, highlightAddr, accent = 'neutral' }: Io
   )
 }
 
+// ─── Wallet History Dropdown ───────────────────────────────────────────────────
+interface HistoryDropdownProps {
+  history: string[]
+  onSelect: (addr: string) => void
+  onRemove: (addr: string) => void
+  onScan: (addr: string) => void
+}
+function HistoryDropdown({ history, onSelect, onRemove, onScan }: HistoryDropdownProps) {
+  if (!history.length) return (
+    <div style={{
+      position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 200,
+      background: '#080f1e', border: '1px solid rgba(59,130,246,0.25)', borderRadius: 12,
+      padding: '20px 16px', boxShadow: '0 16px 48px rgba(0,0,0,0.6)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+    }}>
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#334155" strokeWidth="1.5">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <span style={{ fontSize: 12, color: '#475569' }}>История поиска пуста</span>
+    </div>
+  )
+
+  return (
+    <div style={{
+      position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 200,
+      background: '#080f1e', border: '1px solid rgba(59,130,246,0.25)', borderRadius: 12,
+      overflow: 'hidden', boxShadow: '0 16px 48px rgba(0,0,0,0.6)',
+    }}>
+      <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <span style={{ fontSize: 11, color: '#475569', textTransform: 'uppercase', letterSpacing: '.6px', fontWeight: 600 }}>
+          История поиска · {history.length}
+        </span>
+      </div>
+      <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+        {history.map((addr, i) => {
+          const c = detectChain(addr)
+          const chainColor = c === 'BTC' ? '#f59e0b' : c === 'ETH' ? '#60a5fa' : '#94a3b8'
+          const chainBg = c === 'BTC' ? 'rgba(245,158,11,0.12)' : c === 'ETH' ? 'rgba(59,130,246,0.12)' : 'rgba(148,163,184,0.08)'
+          return (
+            <div
+              key={addr}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '9px 14px',
+                borderBottom: i < history.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+                transition: 'background .15s',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(59,130,246,0.06)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              {/* Chain badge */}
+              {c && (
+                <span style={{
+                  padding: '2px 7px', borderRadius: 5, fontSize: 10, fontWeight: 700,
+                  background: chainBg, color: chainColor, flexShrink: 0, letterSpacing: '.3px',
+                }}>{c}</span>
+              )}
+
+              {/* Address - clickable to fill input */}
+              <span
+                onClick={() => onSelect(addr)}
+                style={{
+                  fontFamily: 'var(--mono, monospace)', fontSize: 12, color: '#94a3b8',
+                  flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  cursor: 'pointer', minWidth: 0,
+                }}
+                title={addr}
+              >
+                {addr}
+              </span>
+
+              {/* Action buttons */}
+              <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                {/* Scan again */}
+                <button
+                  onClick={() => onScan(addr)}
+                  title="Сканировать повторно"
+                  style={{
+                    padding: '4px 8px', borderRadius: 6, border: '1px solid rgba(59,130,246,0.25)',
+                    background: 'rgba(59,130,246,0.1)', color: '#60a5fa', cursor: 'pointer',
+                    fontSize: 11, fontWeight: 600, transition: 'all .15s', display: 'flex', alignItems: 'center', gap: 4,
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(59,130,246,0.22)'; e.currentTarget.style.borderColor = 'rgba(59,130,246,0.5)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(59,130,246,0.1)'; e.currentTarget.style.borderColor = 'rgba(59,130,246,0.25)' }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  </svg>
+                  Скан
+                </button>
+                {/* Delete from history */}
+                <button
+                  onClick={() => onRemove(addr)}
+                  title="Удалить из истории"
+                  style={{
+                    padding: '4px 6px', borderRadius: 6, border: '1px solid rgba(248,113,113,0.18)',
+                    background: 'transparent', color: '#64748b', cursor: 'pointer',
+                    fontSize: 14, lineHeight: 1, transition: 'all .15s', display: 'flex', alignItems: 'center',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(248,113,113,0.1)'; e.currentTarget.style.color = '#f87171' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#64748b' }}
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Component ────────────────────────────────────────────────────────────
 export default function HomePage() {
   const navigate = useNavigate()
@@ -232,6 +365,11 @@ export default function HomePage() {
   const [addr, setAddr] = useState('')
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
+
+  // History
+  const [history, setHistory] = useState<string[]>(() => loadHistory())
+  const [showHistory, setShowHistory] = useState(false)
+  const inputWrapRef = useRef<HTMLDivElement>(null)
 
   // Profile state
   const [chain, setChain] = useState<Chain>(null)
@@ -263,6 +401,17 @@ export default function HomePage() {
   const [modalTx, setModalTx] = useState<AnyTx | null>(null)
   const [modalChain, setModalChain] = useState<Chain>(null)
 
+  // Close history dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (inputWrapRef.current && !inputWrapRef.current.contains(e.target as Node)) {
+        setShowHistory(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
   // Prefill from URL
   useEffect(() => {
     const preset = new URLSearchParams(location.search).get('w')
@@ -293,14 +442,16 @@ export default function HomePage() {
     setQuickFilter(''); setTableMeta(''); setMaxTx(500); setMaxTxCap(500)
   }
 
-  const handleSearch = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault()
-    const a = addr.trim()
+  // ─── Search (profile load) ────────────────────────────────────────────────
+  const doSearch = useCallback(async (searchAddr: string) => {
+    const a = searchAddr.trim()
     if (!a) return
     const c = detectChain(a)
     if (!c) { setStatus('Не удалось распознать адрес. Поддерживаются BTC и ETH.'); return }
     resetState()
     setChain(c)
+    setAddr(a)
+    setShowHistory(false)
     setBusy(true)
     setStatus(c === 'BTC' ? 'Запрашиваем профиль Bitcoin…' : 'Запрашиваем профиль Ethereum…')
     try {
@@ -330,13 +481,23 @@ export default function HomePage() {
         ? `В сети у адреса ${fmtInt(nTx)} транзакций. Настройте выборку и нажмите «Выгрузить».`
         : 'Настройте выборку и нажмите «Выгрузить транзакции».'
       setStatus(txInfo)
+
+      // Save to history after successful search
+      saveToHistory(a)
+      setHistory(loadHistory())
     } catch (err: unknown) {
       setStatus(`Ошибка: ${(err as Error).message}`)
     } finally {
       setBusy(false)
     }
-  }, [addr])
+  }, [])
 
+  const handleSearch = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault()
+    await doSearch(addr)
+  }, [addr, doSearch])
+
+  // ─── Export (replace existing) ────────────────────────────────────────────
   const handleExport = useCallback(async () => {
     if (!profileAddr || !chain) return
     setBusy(true)
@@ -369,6 +530,46 @@ export default function HomePage() {
       setBusy(false)
     }
   }, [profileAddr, chain, maxTx, dateFrom, dateTo, minAmount, maxAmount, direction, includeInternal])
+
+  // ─── Дозагрузить (merge / additive) ───────────────────────────────────────
+  const handleAppend = useCallback(async () => {
+    if (!profileAddr || !chain) return
+    setBusy(true)
+    setStatus(`Дозагружаем до ${fmtInt(maxTx)} транзакций (уже загружено: ${fmtInt(allRows.length)})…`)
+    try {
+      const unit = chain === 'BTC' ? 'btc' : 'eth'
+      const params = new URLSearchParams({ address: profileAddr, maxTx: String(maxTx) })
+      if (dateFrom) params.set('dateFrom', dateFrom)
+      if (dateTo) params.set('dateTo', dateTo)
+      if (minAmount) params.set(chain === 'BTC' ? 'minBtc' : 'minEth', minAmount)
+      if (maxAmount) params.set(chain === 'BTC' ? 'maxBtc' : 'maxEth', maxAmount)
+      if (direction) params.set('direction', direction)
+      if (chain === 'ETH' && includeInternal) params.set('includeInternal', '1')
+
+      const res = await fetchWithTimeout(`/api/${unit}/analyze?${params}`, 175000)
+      if (!res.ok) throw new Error(await res.text() || 'Ошибка analyze')
+      const data: AnalyzeResult = await res.json()
+
+      // Merge: deduplicate by hash
+      const existingHashes = new Set(allRows.map(t => t.hash))
+      const newTxs = (data.transactions || []).filter(t => !existingHashes.has(t.hash))
+      const merged = [...allRows, ...newTxs]
+
+      setWarnings(data.warnings || [])
+      setResult(data)
+      setAllRows(merged)
+      setRows(merged)
+      setQuickFilter('')
+      setTableMeta(
+        `Было: ${fmtInt(allRows.length)} · добавлено: ${fmtInt(newTxs.length)} · итого: ${fmtInt(merged.length)}`
+      )
+      setStatus(`Дозагрузка завершена. Итого ${fmtInt(merged.length)} транзакций (${fmtInt(newTxs.length)} новых).`)
+    } catch (err: unknown) {
+      setStatus(`Ошибка: ${(err as Error).message}`)
+    } finally {
+      setBusy(false)
+    }
+  }, [profileAddr, chain, maxTx, dateFrom, dateTo, minAmount, maxAmount, direction, includeInternal, allRows])
 
   const openModal = (tx: AnyTx) => { setModalTx(tx); setModalChain(chain); document.body.style.overflow = 'hidden' }
   const closeModal = () => { setModalTx(null); setModalChain(null); document.body.style.overflow = '' }
@@ -419,45 +620,29 @@ export default function HomePage() {
       {/* Aurora blobs */}
       <div style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', width: 600, height: 600, borderRadius: '50%', background: 'radial-gradient(circle, rgba(59,130,246,0.06) 0%, transparent 70%)', top: '-10%', left: '-5%', animation: 'aMove 18s ease-in-out infinite alternate' }} />
-        <div style={{ position: 'absolute', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(8,145,178,0.05) 0%, transparent 70%)', bottom: '-10%', right: '-5%', animation: 'aMove2 14s ease-in-out infinite alternate' }} />
+        <div style={{ position: 'absolute', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(245,158,11,0.04) 0%, transparent 70%)', bottom: '-10%', right: '-5%', animation: 'aMove2 14s ease-in-out infinite alternate' }} />
       </div>
 
       {/* Top Nav */}
-      <nav style={{ position: 'sticky', top: 0, zIndex: 100, borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(5,8,16,0.85)', backdropFilter: 'blur(20px)', padding: '0 32px', display: 'flex', alignItems: 'center', height: 56, gap: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginRight: 'auto' }}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="url(#navGrad)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <defs><linearGradient id="navGrad" x1="0" y1="0" x2="24" y2="24"><stop offset="0%" stopColor="#3b82f6" /><stop offset="100%" stopColor="#0891b2" /></linearGradient></defs>
-            <circle cx="12" cy="12" r="3" /><circle cx="4" cy="6" r="2" /><circle cx="20" cy="6" r="2" /><circle cx="4" cy="18" r="2" /><circle cx="20" cy="18" r="2" />
-            <line x1="6" y1="6" x2="10" y2="11" /><line x1="18" y1="6" x2="14" y2="11" />
-            <line x1="6" y1="18" x2="10" y2="13" /><line x1="18" y1="18" x2="14" y2="13" />
-          </svg>
-          <span style={{ fontWeight: 700, fontSize: 15, background: 'linear-gradient(135deg,#e2e8f0,#94a3b8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-            Blockchain Forensics
-          </span>
-        </div>
+      <nav style={{ position: 'sticky', top: 0, zIndex: 100, borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(5,8,16,0.88)', backdropFilter: 'blur(20px)', padding: '0 32px', display: 'flex', alignItems: 'center', height: 66, gap: 16 }}>
+        {/* Logo */}
+        <img src="/logo.png" alt="Logo" style={{ width: 32, height: 32, flexShrink: 0, borderRadius: 7, filter: 'drop-shadow(0 0 6px rgba(59,130,246,0.5))' }} />
+
+        <span style={{ fontWeight: 700, fontSize: 13, color: '#e2e8f0', letterSpacing: '-0.2px', whiteSpace: 'nowrap', marginRight: 'auto' }}>
+          Система мониторинга активности криптокошельков
+        </span>
+
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <button
             type="button"
             onClick={() => void handleLogout()}
             style={{
-              padding: '6px 12px',
-              borderRadius: 8,
-              background: 'transparent',
-              border: '1px solid rgba(255,255,255,0.1)',
-              color: 'var(--text3)',
-              fontSize: 12,
-              fontWeight: 500,
-              cursor: 'pointer',
-              transition: 'all .2s',
+              padding: '6px 12px', borderRadius: 8, background: 'transparent',
+              border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text3)',
+              fontSize: 12, fontWeight: 500, cursor: 'pointer', transition: 'all .2s',
             }}
-            onMouseEnter={e => {
-              e.currentTarget.style.borderColor = 'rgba(248,113,113,0.35)'
-              e.currentTarget.style.color = '#fca5a5'
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'
-              e.currentTarget.style.color = 'var(--text3)'
-            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(248,113,113,0.35)'; e.currentTarget.style.color = '#fca5a5' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = 'var(--text3)' }}
           >
             Выйти
           </button>
@@ -480,42 +665,109 @@ export default function HomePage() {
 
         {/* Hero */}
         <div style={{ textAlign: 'center', marginBottom: 40 }}>
-          <h1 style={{ fontSize: 36, fontWeight: 800, letterSpacing: '-1px', background: 'linear-gradient(135deg,#e2e8f0 30%,#60a5fa 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: 12 }}>
-            Анализ кошелька
+          {/* Logo centered */}
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+            <div style={{
+              position: 'relative',
+              width: 88, height: 88,
+              animation: 'fadeIn .6s both',
+            }}>
+              <div style={{
+                position: 'absolute', inset: -8, borderRadius: '50%',
+                background: 'radial-gradient(circle, rgba(59,130,246,0.18) 0%, transparent 70%)',
+                animation: 'aMove 6s ease-in-out infinite alternate',
+              }} />
+              <img
+                src="/logo.png"
+                alt="Логотип"
+                style={{
+                  width: 88, height: 88,
+                  objectFit: 'contain',
+                  filter: 'drop-shadow(0 0 18px rgba(59,130,246,0.55)) drop-shadow(0 0 6px rgba(59,130,246,0.3))',
+                  borderRadius: 20,
+                }}
+              />
+            </div>
+          </div>
+
+          <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.6px', color: '#e2e8f0', marginBottom: 6, lineHeight: 1.25 }}>
+            Система мониторинга активности криптокошельков
           </h1>
-          <p style={{ color: '#64748b', fontSize: 15 }}>Введите адрес Bitcoin или Ethereum для получения профиля и транзакций</p>
+          <p style={{ color: '#475569', fontSize: 14, marginTop: 4 }}>Введите адрес Bitcoin или Ethereum для получения профиля и транзакций</p>
         </div>
 
-        {/* Search form */}
-        <form onSubmit={handleSearch} style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-          <input
-            value={addr}
-            onChange={e => setAddr(e.target.value)}
-            placeholder="bc1q… или 0x…"
-            disabled={busy}
-            style={{
-              flex: 1, padding: '13px 18px', borderRadius: 10, fontSize: 14,
-              background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
-              color: '#e2e8f0', fontFamily: 'var(--mono, monospace)', outline: 'none',
-              transition: 'border-color .2s',
-            }}
-            onFocus={e => e.currentTarget.style.borderColor = 'rgba(59,130,246,0.5)'}
-            onBlur={e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'}
-          />
-          <button
-            type="submit"
-            disabled={busy}
-            style={{
-              padding: '13px 28px', borderRadius: 10, fontWeight: 600, fontSize: 14,
-              background: 'linear-gradient(135deg,#2563eb,#0891b2)', border: 'none',
-              color: '#fff', cursor: busy ? 'not-allowed' : 'pointer',
-              opacity: busy ? 0.7 : 1, transition: 'all .2s',
-              boxShadow: '0 4px 14px rgba(37,99,235,0.3)',
-            }}
-          >
-            {busy ? 'Ждём…' : 'Поиск'}
-          </button>
-        </form>
+        {/* Search form with history */}
+        <div ref={inputWrapRef} style={{ position: 'relative', marginBottom: 12 }}>
+          <form onSubmit={handleSearch} style={{ display: 'flex', gap: 10 }}>
+            <div style={{ flex: 1, position: 'relative' }}>
+              <input
+                value={addr}
+                onChange={e => setAddr(e.target.value)}
+                onFocus={() => setShowHistory(true)}
+                placeholder="bc1q… или 0x… — кликните для истории"
+                disabled={busy}
+                autoComplete="off"
+                style={{
+                  width: '100%', padding: '13px 44px 13px 18px', borderRadius: 10, fontSize: 14,
+                  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
+                  color: '#e2e8f0', fontFamily: 'var(--mono, monospace)', outline: 'none',
+                  transition: 'border-color .2s',
+                }}
+                onMouseEnter={e => { if (document.activeElement !== e.currentTarget) e.currentTarget.style.borderColor = 'rgba(255,255,255,0.18)' }}
+                onMouseLeave={e => { if (document.activeElement !== e.currentTarget) e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)' }}
+                ref={el => {
+                  if (el) {
+                    el.onfocus = () => el.style.borderColor = 'rgba(59,130,246,0.5)'
+                    el.onblur = () => el.style.borderColor = 'rgba(255,255,255,0.1)'
+                  }
+                }}
+              />
+              {/* History toggle icon */}
+              <button
+                type="button"
+                onClick={() => setShowHistory(v => !v)}
+                tabIndex={-1}
+                style={{
+                  position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+                  background: 'none', border: 'none', cursor: 'pointer', padding: 4,
+                  color: history.length > 0 ? '#475569' : '#2d3748',
+                  transition: 'color .2s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.color = '#60a5fa'}
+                onMouseLeave={e => e.currentTarget.style.color = history.length > 0 ? '#475569' : '#2d3748'}
+                title={`История (${history.length})`}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                </svg>
+              </button>
+            </div>
+            <button
+              type="submit"
+              disabled={busy}
+              style={{
+                padding: '13px 28px', borderRadius: 10, fontWeight: 600, fontSize: 14,
+                background: 'linear-gradient(135deg,#2563eb,#1d4ed8)', border: 'none',
+                color: '#fff', cursor: busy ? 'not-allowed' : 'pointer',
+                opacity: busy ? 0.7 : 1, transition: 'all .2s',
+                boxShadow: '0 4px 14px rgba(37,99,235,0.35)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {busy ? 'Ждём…' : 'Поиск'}
+            </button>
+          </form>
+
+          {/* History dropdown */}
+          {showHistory && (
+            <HistoryDropdown
+              history={history}
+              onSelect={a => { setAddr(a); setShowHistory(false) }}
+              onRemove={a => { removeFromHistory(a); setHistory(loadHistory()) }}
+              onScan={a => { setShowHistory(false); void doSearch(a) }}
+            />
+          )}
+        </div>
 
         {/* Status */}
         {status && (
@@ -563,7 +815,6 @@ export default function HomePage() {
                   onChange={e => { const v = Math.min(maxTxCap, Math.max(1, Number(e.target.value))); setMaxTx(v) }}
                   style={{ width: 80, padding: '6px 10px', borderRadius: 7, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#e2e8f0', fontSize: 13, textAlign: 'center' }}
                 />
-                <span style={{ padding: '4px 12px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>{fmtInt(maxTx)} шт.</span>
               </div>
 
               {/* Filters */}
@@ -589,11 +840,34 @@ export default function HomePage() {
                 )}
               </div>
 
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                {/* Primary: load / replace */}
                 <button onClick={handleExport} disabled={busy}
-                  style={{ padding: '10px 22px', borderRadius: 9, fontWeight: 600, fontSize: 13, background: 'linear-gradient(135deg,#2563eb,#0891b2)', border: 'none', color: '#fff', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1, boxShadow: '0 4px 12px rgba(37,99,235,0.25)', transition: 'all .2s' }}>
-                  {busy ? 'Загрузка…' : 'Выгрузить транзакции'}
+                  style={{ padding: '10px 22px', borderRadius: 9, fontWeight: 600, fontSize: 13, background: 'linear-gradient(135deg,#2563eb,#1d4ed8)', border: 'none', color: '#fff', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1, boxShadow: '0 4px 12px rgba(37,99,235,0.28)', transition: 'all .2s' }}>
+                  {busy ? 'Загрузка…' : allRows.length > 0 ? 'Перезагрузить транзакции' : 'Выгрузить транзакции'}
                 </button>
+
+                {/* Additive load button — shown when there are already loaded txs */}
+                {allRows.length > 0 && (
+                  <button onClick={handleAppend} disabled={busy}
+                    style={{
+                      padding: '10px 20px', borderRadius: 9, fontWeight: 600, fontSize: 13,
+                      background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)',
+                      color: '#f59e0b', cursor: busy ? 'not-allowed' : 'pointer',
+                      opacity: busy ? 0.7 : 1, transition: 'all .2s', display: 'flex', alignItems: 'center', gap: 7,
+                    }}
+                    onMouseEnter={e => { if (!busy) { e.currentTarget.style.background = 'rgba(245,158,11,0.18)'; e.currentTarget.style.borderColor = 'rgba(245,158,11,0.5)' }}}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(245,158,11,0.1)'; e.currentTarget.style.borderColor = 'rgba(245,158,11,0.3)' }}
+                    title="Загружает транзакции с текущими фильтрами и добавляет к уже загруженным (дубли исключаются по хэшу)"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>
+                      <line x1="5" y1="5" x2="19" y2="5"/>
+                    </svg>
+                    Дозагрузить
+                  </button>
+                )}
+
                 <button
                   onClick={() => { setDateFrom(''); setDateTo(''); setMinAmount(''); setMaxAmount(''); setDirection(''); setIncludeInternal(false) }}
                   style={{ padding: '10px 18px', borderRadius: 9, fontSize: 13, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8', cursor: 'pointer', transition: 'all .2s' }}>
@@ -642,14 +916,14 @@ export default function HomePage() {
                 <div style={{ overflowX: 'auto', borderRadius: 12, border: '1px solid rgba(255,255,255,0.07)' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, tableLayout: 'fixed' }}>
                     <colgroup>
-                      <col style={{ width: 140 }} />
-                      <col style={{ width: 64 }} />
-                      <col style={{ width: 150 }} />
-                      <col style={{ width: 110 }} />
-                      <col style={{ width: 110 }} />
-                      <col style={{ width: 80 }} />
-                      <col style={{ width: 96 }} />
-                      <col /> {/* hash — takes remaining */}
+                      <col style={{ width: 158 }} />  {/* Дата — "28.12.2021, 20:04:29" */}
+                      <col style={{ width: 58 }} />   {/* Dir */}
+                      <col style={{ width: 148 }} />  {/* Сумма */}
+                      <col style={{ width: 108 }} />  {/* Комиссия */}
+                      <col style={{ width: 108 }} />  {/* Размер/Вес · Gas */}
+                      <col style={{ width: 82 }} />   {/* Блок */}
+                      <col style={{ width: 104 }} />  {/* Статус */}
+                      <col />                          {/* Хэш — остаток */}
                     </colgroup>
                     <thead>
                       <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
@@ -680,9 +954,9 @@ export default function HomePage() {
       {modalTx && (
         <div
           onClick={e => { if (e.currentTarget === e.target) closeModal() }}
-          style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+          style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.78)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
         >
-          <div style={{ background: '#080d1c', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 16, width: '100%', maxWidth: 680, maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', animation: 'fadeIn .25s both' }}>
+          <div style={{ background: '#080d1c', border: '1px solid rgba(59,130,246,0.15)', borderRadius: 16, width: '100%', maxWidth: 680, maxHeight: '80vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', animation: 'fadeIn .25s both' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 24px', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
               <span style={{ fontWeight: 700, fontSize: 15, color: '#e2e8f0' }}>Детали транзакции</span>
               <button onClick={closeModal} style={{ background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 8, width: 32, height: 32, color: '#94a3b8', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
@@ -698,38 +972,14 @@ export default function HomePage() {
               </dl>
               {modalChain === 'BTC' && (
                 <>
-                  <IoSection
-                    title="Входы (отправители)"
-                    items={(modalTx as BtcTx).inputs || []}
-                    unit="BTC"
-                    highlightAddr={profileAddr}
-                    accent="out"
-                  />
-                  <IoSection
-                    title="Выходы (получатели)"
-                    items={(modalTx as BtcTx).outputs || []}
-                    unit="BTC"
-                    highlightAddr={profileAddr}
-                    accent="in"
-                  />
+                  <IoSection title="Входы (отправители)" items={(modalTx as BtcTx).inputs || []} unit="BTC" highlightAddr={profileAddr} accent="out" />
+                  <IoSection title="Выходы (получатели)" items={(modalTx as BtcTx).outputs || []} unit="BTC" highlightAddr={profileAddr} accent="in" />
                 </>
               )}
               {modalChain === 'ETH' && (
                 <>
-                  <IoSection
-                    title="От"
-                    items={(modalTx as EthTx).from ? [{ addr: (modalTx as EthTx).from, value: modalTx.amount }] : []}
-                    unit="ETH"
-                    highlightAddr={profileAddr}
-                    accent="out"
-                  />
-                  <IoSection
-                    title="Кому"
-                    items={(modalTx as EthTx).to ? [{ addr: (modalTx as EthTx).to, value: modalTx.amount }] : []}
-                    unit="ETH"
-                    highlightAddr={profileAddr}
-                    accent="in"
-                  />
+                  <IoSection title="От" items={(modalTx as EthTx).from ? [{ addr: (modalTx as EthTx).from, value: modalTx.amount }] : []} unit="ETH" highlightAddr={profileAddr} accent="out" />
+                  <IoSection title="Кому" items={(modalTx as EthTx).to ? [{ addr: (modalTx as EthTx).to, value: modalTx.amount }] : []} unit="ETH" highlightAddr={profileAddr} accent="in" />
                 </>
               )}
             </div>
@@ -769,28 +1019,31 @@ function TxRow({ tx, chain, onClick }: { tx: AnyTx; chain: Chain; onClick: () =>
   const href = safeUrl(tx.explorerUrl)
   const unit = chain === 'BTC' ? 'BTC' : 'ETH'
 
+  // Block / gas — plain numbers, NO locale separators (avoid "716 145" wrapping)
   const col3 = chain === 'BTC'
-    ? `${fmtInt((tx as BtcTx).size)} / ${fmtInt((tx as BtcTx).weight)}`
-    : `${fmtInt((tx as EthTx).gasUsed)} / ${fmtInt((tx as EthTx).gas)}`
+    ? `${(tx as BtcTx).size} / ${(tx as BtcTx).weight}`
+    : `${(tx as EthTx).gasUsed} / ${(tx as EthTx).gas}`
   const col4 = chain === 'BTC'
-    ? (tx as BtcTx).blockHeight ? fmtInt((tx as BtcTx).blockHeight) : '—'
-    : (tx as EthTx).blockNumber ? fmtInt((tx as EthTx).blockNumber) : '—'
+    ? (tx as BtcTx).blockHeight ? String((tx as BtcTx).blockHeight) : '—'
+    : (tx as EthTx).blockNumber ? String((tx as EthTx).blockNumber) : '—'
+
+  const tdBase: React.CSSProperties = { padding: '10px 12px', whiteSpace: 'nowrap', verticalAlign: 'middle' }
 
   return (
     <tr onClick={onClick} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer', transition: 'background .15s' }}
       onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
     >
-      <td style={{ padding: '10px 12px', color: '#94a3b8', fontSize: 12 }}>{toLocalDate(tx.date)}</td>
-      <td style={{ padding: '10px 12px' }}><span style={pillStyle}>{dir}</span></td>
-      <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: amtColor, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis' }}>{sign}{fmtNum(tx.amount)} {unit}</td>
-      <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: '#64748b', fontSize: 12 }}>{fmtNum(tx.fee)}</td>
-      <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: '#64748b', fontSize: 12 }}>{col3}</td>
-      <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: '#64748b', fontSize: 12 }}>{col4}</td>
-      <td style={{ padding: '10px 12px' }}>
+      <td style={{ ...tdBase, color: '#94a3b8', fontSize: 12 }}>{toLocalDate(tx.date)}</td>
+      <td style={tdBase}><span style={pillStyle}>{dir}</span></td>
+      <td style={{ ...tdBase, textAlign: 'right', fontFamily: 'monospace', color: amtColor, fontSize: 12 }}>{sign}{fmtNum(tx.amount)} {unit}</td>
+      <td style={{ ...tdBase, textAlign: 'right', fontFamily: 'monospace', color: '#64748b', fontSize: 12 }}>{fmtNum(tx.fee)}</td>
+      <td style={{ ...tdBase, textAlign: 'right', fontFamily: 'monospace', color: '#64748b', fontSize: 12 }}>{col3}</td>
+      <td style={{ ...tdBase, textAlign: 'right', fontFamily: 'monospace', color: '#64748b', fontSize: 12 }}>{col4}</td>
+      <td style={tdBase}>
         <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, background: tx.status === 'confirmed' ? 'rgba(16,185,129,0.12)' : 'rgba(248,113,113,0.12)', color: tx.status === 'confirmed' ? '#10b981' : '#f87171', border: `1px solid ${tx.status === 'confirmed' ? 'rgba(16,185,129,0.25)' : 'rgba(248,113,113,0.25)'}` }}>{tx.status}</span>
       </td>
-      <td style={{ padding: '10px 12px', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+      <td style={{ ...tdBase, overflow: 'hidden', maxWidth: 0 }} onClick={e => e.stopPropagation()}>
         {href
           ? <a href={href} target="_blank" rel="noreferrer" style={{ fontFamily: 'monospace', fontSize: 12, color: '#60a5fa', textDecoration: 'none', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tx.hash}>{tx.hash}</a>
           : <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#64748b', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tx.hash}>{tx.hash}</span>

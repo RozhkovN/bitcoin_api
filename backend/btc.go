@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -251,13 +252,15 @@ func parseBtcFilters(q url.Values) (*btcFilterParams, error) {
 	return f, nil
 }
 
-func fetchBtcSummary(ctx context.Context, address string) (BtcSummaryResponse, error) {
-	// Первичный источник: blockchain.info
+// fetchBtcSummaryLive делает реальный запрос к blockchain.info / mempool.space.
+// Не трогает кэш — только сетевой вызов.
+func fetchBtcSummaryLive(ctx context.Context, address string) (BtcSummaryResponse, error) {
+	const chain = "bitcoin"
 	u := fmt.Sprintf("https://blockchain.info/rawaddr/%s?limit=0", url.PathEscape(address))
 	var raw btcAddrResponse
 	if err := fetchJSONRetry(ctx, u, &raw, btcSingleFetchTimeout, btcRetries); err == nil {
 		return BtcSummaryResponse{
-			Chain:         "bitcoin",
+			Chain:         chain,
 			Address:       raw.Address,
 			Hash160:       raw.Hash160,
 			NTx:           raw.NTx,
@@ -267,10 +270,41 @@ func fetchBtcSummary(ctx context.Context, address string) (BtcSummaryResponse, e
 			TotalSent:     roundTo(satoshiToCoin(raw.TotalSent), 8),
 		}, nil
 	}
-
-	// Fallback: mempool.space
 	log.Printf("[btc] blockchain.info summary недоступен, переключаюсь на mempool.space")
 	return fetchBtcSummaryMempool(ctx, address)
+}
+
+// fetchBtcSummary — кэш-обёртка над fetchBtcSummaryLive.
+//   • Есть в DB  → мгновенный ответ + фоновое обновление кэша
+//   • Нет в DB   → блокирующий запрос к API, результат кэшируется
+func fetchBtcSummary(ctx context.Context, address string) (BtcSummaryResponse, error) {
+	const chain = "bitcoin"
+
+	if cached, ok := summaryCacheGet(address, chain); ok {
+		var s BtcSummaryResponse
+		if json.Unmarshal(cached, &s) == nil {
+			log.Printf("[btc] summary cache hit: %s", shortTxid(address))
+			// Обновляем в фоне — не блокируем ответ
+			asyncSummaryRefresh(address, chain, func() ([]byte, error) {
+				r, err := fetchBtcSummaryLive(context.Background(), address)
+				if err != nil {
+					return nil, err
+				}
+				return json.Marshal(r)
+			})
+			return s, nil
+		}
+	}
+
+	// Первый запрос для этого адреса — блокирующий
+	result, err := fetchBtcSummaryLive(ctx, address)
+	if err != nil {
+		return BtcSummaryResponse{}, err
+	}
+	if b, e := json.Marshal(result); e == nil {
+		summaryCacheSet(address, chain, b)
+	}
+	return result, nil
 }
 
 func analyzeBitcoinRich(ctx context.Context, address string, maxFetch int, filters *btcFilterParams) (BtcAnalyzeResponse, error) {
