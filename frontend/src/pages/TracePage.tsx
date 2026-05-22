@@ -1051,8 +1051,8 @@ function AddressExplorer({ data, onCopied }: { data: TraceResponse; onCopied: (m
   const addrs = useMemo(() => {
     const s = new Set<string>()
     data.nodes.forEach(n => {
-      n.inputs.forEach(i => { if (i.addr?.trim()) s.add(i.addr.trim()) })
-      n.outputs.forEach(o => { if (o.addr?.trim()) s.add(o.addr.trim()) })
+      ;(n.inputs ?? []).forEach(i => { if (i.addr?.trim()) s.add(i.addr.trim()) })
+      ;(n.outputs ?? []).forEach(o => { if (o.addr?.trim()) s.add(o.addr.trim()) })
     })
     return [...s].sort()
   }, [data])
@@ -1325,11 +1325,11 @@ function TxCard({ tx, laneColor, isRoot, flowToRoot, onCopied, isSelected, onCli
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 11 }}>
         <div>
-          <div style={{ color: 'var(--text3)', fontSize: 9, textTransform: 'uppercase', letterSpacing: '.05em' }}>vin · {tx.inputs.length}</div>
+          <div style={{ color: 'var(--text3)', fontSize: 9, textTransform: 'uppercase', letterSpacing: '.05em' }}>vin · {(tx.inputs ?? []).length}</div>
           <div style={{ color: '#10b981', fontWeight: 500 }}>{fmtCompact(tx.totalIn)} BTC</div>
         </div>
         <div>
-          <div style={{ color: 'var(--text3)', fontSize: 9, textTransform: 'uppercase', letterSpacing: '.05em' }}>vout · {tx.outputs.length}</div>
+          <div style={{ color: 'var(--text3)', fontSize: 9, textTransform: 'uppercase', letterSpacing: '.05em' }}>vout · {(tx.outputs ?? []).length}</div>
           <div style={{ color: '#f87171', fontWeight: 500 }}>{fmtCompact(tx.totalOut)} BTC</div>
         </div>
       </div>
@@ -1358,8 +1358,8 @@ function TxCard({ tx, laneColor, isRoot, flowToRoot, onCopied, isSelected, onCli
           marginTop: 10, paddingTop: 10, borderTop: `1px solid ${laneColor}33`,
           fontSize: 11, display: 'flex', flexDirection: 'column', gap: 8,
         }}>
-          <DetailSection title="Входы" items={tx.inputs} accent="#10b981" onCopied={onCopied} />
-          <DetailSection title="Выходы" items={tx.outputs} accent="#f87171" onCopied={onCopied} />
+          <DetailSection title="Входы" items={tx.inputs ?? []} accent="#10b981" onCopied={onCopied} />
+          <DetailSection title="Выходы" items={tx.outputs ?? []} accent="#f87171" onCopied={onCopied} />
 
           {!isRoot && (
             <button
@@ -1399,11 +1399,11 @@ function TxCard({ tx, laneColor, isRoot, flowToRoot, onCopied, isSelected, onCli
 
 function DetailSection({ title, items, accent, onCopied }: {
   title: string
-  items: { addr: string; value: number; index: number }[]
+  items: { addr: string; value: number; index: number }[] | null
   accent: string
   onCopied: (msg: string) => void
 }) {
-  if (!items.length) return null
+  if (!items?.length) return null
   return (
     <div>
       <div style={{ fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>{title}</div>

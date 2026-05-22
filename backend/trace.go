@@ -703,6 +703,8 @@ func txToTraceNode(tx mempoolTraceTx, depth int) *TraceNode {
 		BlockHeight: tx.Status.BlockHeight,
 		Fee:         satoshiToCoin(tx.Fee),
 		ExplorerURL: "https://mempool.space/tx/" + tx.Txid,
+		Inputs:      make([]TraceIO, 0), // явно инициализируем чтобы JSON выдавал [] а не null
+		Outputs:     make([]TraceIO, 0),
 	}
 
 	for i, vin := range tx.Vin {
